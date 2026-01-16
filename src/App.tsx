@@ -35,13 +35,15 @@ function App() {
         }
 
         const validTypes = ['pista', 'palestra', 'strada', 'gara', 'test', 'scarico', 'recupero', 'altro'];
+        // --- LOGICA TIPI MIGLIORATA ---
         let finalType = 'altro';
         if (item.session.type) {
           const aiType = item.session.type.toLowerCase().trim();
           if (validTypes.includes(aiType)) finalType = aiType;
-          else if (aiType.includes('pista')) finalType = 'pista';
-          else if (aiType.includes('palestra') || aiType.includes('gym')) finalType = 'palestra';
-          else if (aiType.includes('strada')) finalType = 'strada';
+          else if (aiType.includes('pista') || aiType.includes('track')) finalType = 'pista';
+          else if (aiType.includes('palestra') || aiType.includes('gym') || aiType.includes('pesi') || aiType.includes('forza')) finalType = 'palestra';
+          else if (aiType.includes('strada') || aiType.includes('road') || aiType.includes('corsa')) finalType = 'strada';
+          else if (aiType.includes('gara') || aiType.includes('competizione')) finalType = 'gara';
         }
 
         // Insert Sessione
