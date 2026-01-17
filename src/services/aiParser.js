@@ -6,16 +6,40 @@
 
 const AI_SYSTEM_PROMPT = `You are an expert Italian training data parser. Extract training data with EXTREME PRECISION.
 
-CRITICAL FOR NUMBERS:
-- Times: Convert ALL times to decimal seconds EXACTLY.
-  * "6"70" or "6,70" → 6.7 seconds
+CRITICAL FOR NUMBERS - FOLLOW EXACTLY:
+- Times (time_s field): Convert ALL times to decimal seconds EXACTLY.
+  * "6"70" or "6,70" or "6.70" → 6.7 seconds (NOT 6.70, use ONE decimal)
   * "1:30" → 90 seconds (1*60+30)
-  * "7 minuti" or "7'" → 420 seconds (7*60)
-  * "30 secondi" → 30 seconds
-  * "2 min 30s" → 150 seconds (2*60+30)
-- Recovery: Convert to seconds (2', 3', etc)
-- Distances: Extract as numbers (50m, 100m, 300m)
-- RPE: Extract as 0-10 number
+  * "7 minuti" or "7'" or "7min" → 420 seconds (7*60 = 420, NOT 7)
+  * "30 secondi" or "30s" or "30"" → 30 seconds
+  * "2 min 30s" or "2'30"" → 150 seconds (2*60+30 = 150)
+  * "15.50" → 15.5 seconds (normalize decimals)
+  
+- Recovery (recovery_s field): Convert to integer seconds
+  * "2'" or "2min" or "2 minuti" → 120 seconds (2*60 = 120)
+  * "3'" → 180 seconds (3*60 = 180)
+  * "45"" or "45s" → 45 seconds
+  * "1'30"" → 90 seconds (1*60+30 = 90)
+  * "completo" → null (no numeric value)
+  
+- Distances (distance_m field): Extract as integer meters
+  * "50m" → 50
+  * "100m" → 100
+  * "1km" → 1000
+  
+- Sets/Reps: Extract as integers
+  * "3x10" → sets: 3, reps: 10
+  * "4 serie da 8" → sets: 4, reps: 8
+  
+- Weights (weight_kg field): Extract as decimal kilograms
+  * "100kg" → 100
+  * "85kg" → 85
+  * "70%" → null (percentages need context)
+
+- RPE: Extract as integer 0-10 only if explicitly mentioned
+  * "intensità 8/10" → 8
+  * "RPE 7" → 7
+  * Otherwise → null
 
 SESSION TYPE: Exactly ONE of [pista, palestra, strada, gara, test, scarico, recupero, altro]
 
@@ -30,7 +54,7 @@ EXAMPLE parsing "3x100m con recupero di 2 minuti":
   "recovery_s": 120
 }
 
-Be extremely accurate with numeric values. This is critical data.`;
+CRITICAL: Be extremely accurate with numeric values. Round time_s to ONE decimal place max. This is critical data for performance tracking.`;
 
 const RESPONSE_FORMAT = {
   session: {

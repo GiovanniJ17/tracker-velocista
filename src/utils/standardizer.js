@@ -222,11 +222,44 @@ export function normalizeRecovery(recoveryStr) {
  * Called after AI parsing to ensure consistency
  */
 export function standardizeWorkoutSet(set) {
+  // Arrotonda i valori numerici per uniformità
+  let timeS = set.time_s;
+  if (timeS !== null && timeS !== undefined) {
+    timeS = typeof timeS === 'number' ? timeS : parseFloat(timeS);
+    // Arrotonda a 1 decimale per tempi < 100s, a intero per tempi > 100s
+    timeS = timeS < 100 ? Math.round(timeS * 10) / 10 : Math.round(timeS);
+  }
+  
+  let recoveryS = set.recovery_s;
+  if (recoveryS !== null && recoveryS !== undefined) {
+    recoveryS = typeof recoveryS === 'number' ? recoveryS : parseFloat(recoveryS);
+    // Arrotonda sempre a intero per i recuperi
+    recoveryS = Math.round(recoveryS);
+  }
+  
+  let weightKg = set.weight_kg;
+  if (weightKg !== null && weightKg !== undefined) {
+    weightKg = typeof weightKg === 'number' ? weightKg : parseFloat(weightKg);
+    // Arrotonda a 1 decimale (es: 85.5 kg)
+    weightKg = Math.round(weightKg * 10) / 10;
+  }
+  
+  let distanceM = set.distance_m;
+  if (distanceM !== null && distanceM !== undefined) {
+    distanceM = typeof distanceM === 'number' ? distanceM : parseInt(distanceM);
+    // Sempre intero per le distanze
+    distanceM = Math.round(distanceM);
+  }
+  
   return {
     ...set,
     exercise_name: normalizeExerciseName(set.exercise_name),
-    time_s: set.time_s ? normalizeTime(set.time_s) : null,
-    recovery_s: set.recovery_s ? normalizeRecovery(set.recovery_s) : null,
+    time_s: timeS,
+    recovery_s: recoveryS,
+    weight_kg: weightKg,
+    distance_m: distanceM,
+    sets: set.sets ? parseInt(set.sets) : 1,
+    reps: set.reps ? parseInt(set.reps) : 1
   };
 }
 
