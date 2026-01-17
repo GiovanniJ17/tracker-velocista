@@ -75,7 +75,7 @@ app.post('/', async (req, res) => {
     res.json(apiResponse);
   } catch (error) {
     console.error('❌ Proxy error:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: { message: error.message } });
   }
 });
 

@@ -34,7 +34,7 @@ export default {
       const { provider, messages, model, apiKey } = body;
 
       if (!provider) {
-        return new Response(JSON.stringify({ error: 'Provider è obbligatorio' }), {
+        return new Response(JSON.stringify({ error: { message: 'Provider è obbligatorio' } }), {
           status: 400,
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
         });
@@ -46,7 +46,7 @@ export default {
 
       if (provider === 'gemini') {
         if (!resolvedApiKey) {
-          return new Response(JSON.stringify({ error: 'Gemini API key non configurata' }), {
+          return new Response(JSON.stringify({ error: { message: 'Gemini API key non configurata' } }), {
             status: 500,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
@@ -57,7 +57,7 @@ export default {
       } else if (provider === 'anthropic') {
         result = await callAnthropic(messages, model || 'claude-3-sonnet-20240229', apiKey);
       } else {
-        return new Response(JSON.stringify({ error: 'Provider non supportato' }), {
+        return new Response(JSON.stringify({ error: { message: 'Provider non supportato' } }), {
           status: 400,
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
         });
@@ -69,7 +69,7 @@ export default {
       });
     } catch (error) {
       console.error('Worker error:', error);
-      return new Response(JSON.stringify({ error: error.message }), {
+      return new Response(JSON.stringify({ error: { message: error.message } }), {
         status: 500,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
       });
