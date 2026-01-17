@@ -46,7 +46,7 @@ app.post('/', async (req, res) => {
       if (!apiKey) {
         return res.status(400).json({ error: 'Gemini: API key è obbligatorio' });
       }
-      apiResponse = await callGemini(messages, model || 'gemini-pro', apiKey);
+      apiResponse = await callGemini(messages, model || 'gemini-2.5-flash', apiKey);
     } else if (provider === 'groq') {
       if (!apiKey) {
         return res.status(400).json({ error: 'Groq: API key è obbligatorio' });
@@ -89,7 +89,7 @@ async function callGemini(messages, model, apiKey) {
   const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userContent}` : userContent;
   
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
     
     const response = await fetch(url, {
       method: 'POST',

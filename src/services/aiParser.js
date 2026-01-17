@@ -176,7 +176,7 @@ function buildProxyRequest(provider, userPrompt) {
   if (provider === 'gemini') {
     return {
       ...baseRequest,
-      model: 'gemini-pro',
+      model: 'gemini-2.5-flash',
       apiKey: import.meta.env.VITE_GEMINI_API_KEY
     };
   }

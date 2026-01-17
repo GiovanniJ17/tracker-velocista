@@ -43,7 +43,7 @@ export default {
       let result;
 
       if (provider === 'gemini') {
-        result = await callGemini(messages, model || 'gemini-pro', apiKey);
+        result = await callGemini(messages, model || 'gemini-2.5-flash', apiKey);
       } else if (provider === 'openai') {
         result = await callOpenAI(messages, model || 'gpt-4o', apiKey);
       } else if (provider === 'anthropic') {
@@ -75,7 +75,7 @@ async function callGemini(messages, model, apiKey) {
   const userContent = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
   const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userContent}` : userContent;
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
   
   const response = await fetch(url, {
     method: 'POST',
