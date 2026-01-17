@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker - AI Parser Proxy
- * Gestisce le richieste alle API OpenAI e Anthropic
+ * Gestisce le richieste alle API di AI providers (Gemini, OpenAI, Anthropic, ecc.)
  * Circonventa i problemi CORS
  */
 
@@ -42,7 +42,9 @@ export default {
 
       let result;
 
-      if (provider === 'openai') {
+      if (provider === 'gemini') {
+        result = await callGemini(messages, model || 'gemini-2.5-flash', apiKey);
+      } else if (provider === 'openai') {
         result = await callOpenAI(messages, model || 'gpt-4o', apiKey);
       } else if (provider === 'anthropic') {
         result = await callAnthropic(messages, model || 'claude-3-sonnet-20240229', apiKey);
@@ -66,6 +68,49 @@ export default {
     }
   }
 };
+
+async function callGemini(messages, model, apiKey) {
+  // Combina i messaggi in un singolo prompt
+  const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
+  const userContent = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userContent}` : userContent;
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: fullPrompt }]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 8192
+      }
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error?.message || `Gemini API error: ${response.statusText}`);
+  }
+
+  // Estrai il testo dalla risposta di Gemini
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  
+  // Trasforma in formato compatibile (OpenAI-like)
+  return {
+    choices: [{
+      message: {
+        content: text
+      }
+    }]
+  };
+}
 
 async function callOpenAI(messages, model, apiKey) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {

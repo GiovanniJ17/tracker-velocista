@@ -197,7 +197,7 @@ function buildProxyRequest(provider, userPrompt) {
 }
 
 async function parseSingleDay({ text, date, titleHint }) {
-  const provider = import.meta.env.VITE_AI_PROVIDER || 'cloudflare';
+  const provider = import.meta.env.VITE_AI_PROVIDER || 'gemini';
 
   // Template con esempi concreti di esercizi
   const jsonTemplate = `{
@@ -233,7 +233,12 @@ ${jsonTemplate}
 
 Return ONLY valid JSON. Do not include markdown or explanations.`;
   
-  const response = await fetch('http://localhost:5000', {
+  // Usa il Cloudflare Worker endpoint se in production, altrimenti localhost
+  const proxyUrl = import.meta.env.MODE === 'production'
+    ? '/api/ai-proxy' // Cloudflare Pages route
+    : 'http://localhost:5000';
+  
+  const response = await fetch(proxyUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(buildProxyRequest(provider, userPrompt))
