@@ -1,37 +1,36 @@
 /**
  * AI Training Parser Service
- * Converte descrizioni di allenamento in linguaggio naturale 
- * in dati strutturati per il database
+ * Converte descrizioni di allenamento in linguaggio naturale in dati strutturati
+ * Supporta input con più giorni nello stesso testo e data automatica per ogni giorno
  */
 
-const AI_SYSTEM_PROMPT = `Extract training data from Italian workout descriptions. Parse EVERY exercise mentioned.
+const AI_SYSTEM_PROMPT = `You are an expert Italian training data parser. Extract training data with EXTREME PRECISION.
 
-CRITICAL: Session type MUST be a SINGLE value from this list ONLY:
-pista, palestra, strada, gara, test, scarico, recupero, altro
+CRITICAL FOR NUMBERS:
+- Times: Convert ALL times to decimal seconds EXACTLY.
+  * "6"70" or "6,70" → 6.7 seconds
+  * "1:30" → 90 seconds (1*60+30)
+  * "7 minuti" or "7'" → 420 seconds (7*60)
+  * "30 secondi" → 30 seconds
+  * "2 min 30s" → 150 seconds (2*60+30)
+- Recovery: Convert to seconds (2', 3', etc)
+- Distances: Extract as numbers (50m, 100m, 300m)
+- RPE: Extract as 0-10 number
 
-For MIXED sessions (pista AND palestra mentioned):
-- Count: pista exercises = "4x50m" (1 group)
-- Count: palestra exercises = "squat 100kg", "trazioni zavorrate", "power clean", "squat veloci", "pancia manubri" (5 groups)
-- CHOOSE MAJORITY: palestra has more exercises → type="palestra"
+SESSION TYPE: Exactly ONE of [pista, palestra, strada, gara, test, scarico, recupero, altro]
 
-PARSING RULES:
-1. RPE: Extract "intensità X" as rpe (0-10 number)
-2. Feeling: Extract sensations into feeling field
-3. EXERCISES - Parse ALL of them:
-   - Track: "4x50m" → sets=4, distance_m=50, category="sprint"
-   - Strength: "100kg 2x3" → weight_kg=100, sets=2, reps=3, category="lift"
-   - Plyometric: "squat jumps 3 serie" → category="jump", sets=3
-4. WEIGHTS: Extract ALL kg values. "80% massimale(70kg)" → weight_kg=56 (70*0.8)
-5. Recovery: Convert to seconds (2min=120s, 30"=30s)
+OUTPUT: Valid JSON only. No markdown, no code blocks, no explanations.
 
-EXAMPLE FOR YOUR CONTEXT:
-Input: "prima pista (4x50m) poi palestra (squat 100kg, trazioni 20kg, power clean, squat veloci, petto 16kg)"
-Decision: Palestra has 5 exercises, Pista has 1 → type MUST be "palestra" (not "pista" or "pista, palestra" or "palestrapista")
+EXAMPLE parsing "3x100m con recupero di 2 minuti":
+{
+  "exercise_name": "Sprint 100m",
+  "sets": 3,
+  "reps": 1,
+  "distance_m": 100,
+  "recovery_s": 120
+}
 
-OUTPUT: Valid JSON only. type field MUST be single word from valid list.`;
-
-
-
+Be extremely accurate with numeric values. This is critical data.`;
 
 const RESPONSE_FORMAT = {
   session: {
@@ -59,82 +58,111 @@ const RESPONSE_FORMAT = {
           time_s: null,
           recovery_s: null,
           notes: "Note specifiche (opzionale)",
-          details: {} // JSONB per dati extra
+          details: {}
         }
       ]
     }
   ]
 };
 
-/**
- * Parses natural language training descriptions using AI
- * @param {string} trainingText - Raw Italian workout description
- * @param {Date} date - Session date (defaults to today)
- * @returns {Promise<Object>} Parsed training data with session, groups, and sets
- * @throws {Error} If AI parsing or validation fails
- */
-export async function parseTrainingWithAI(trainingText, date = new Date()) {
-  const provider = import.meta.env.VITE_AI_PROVIDER || 'cloudflare';
+const WEEKDAY_INDEX = {
+  lunedi: 1,
+  'lunedì': 1,
+  martedi: 2,
+  'martedì': 2,
+  mercoledi: 3,
+  'mercoledì': 3,
+  giovedi: 4,
+  'giovedì': 4,
+  venerdi: 5,
+  'venerdì': 5,
+  sabato: 6,
+  domenica: 0,
+};
 
-  const userPrompt = `Data allenamento: ${date.toISOString().split('T')[0]}
-
-Descrizione allenamento:
-${trainingText}
-
-Converti in JSON seguendo questo formato:
-${JSON.stringify(RESPONSE_FORMAT, null, 2)}`;
-
-  try {
-    // Usa il proxy server sulla porta 5000
-    const response = await fetch('http://localhost:5000', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(buildProxyRequest(provider, userPrompt))
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'Errore API AI');
-    }
-
-    const data = await response.json();
-    
-    // Gestisci diverse strutture di risposta
-    if (data.choices) {
-      // Risposta OpenAI format
-      const content = data.choices[0].message.content;
-      return JSON.parse(content);
-    } else if (data.content) {
-      // Risposta Anthropic
-      const content = data.content[0].text;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('Risposta AI non contiene JSON valido');
-      }
-      return JSON.parse(jsonMatch[0]);
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Errore nel parsing AI:', error);
-    throw new Error(`Errore nell'interpretazione AI: ${error.message}`);
-  }
+function startOfWeek(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0 = Sunday, 1 = Monday
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-/**
- * Crea il corpo della richiesta per il proxy basato sul provider
- */
+function dateForWeekday(weekday, reference = new Date()) {
+  const weekStart = startOfWeek(reference);
+  const targetIndex = WEEKDAY_INDEX[weekday.toLowerCase()] ?? 1;
+  const result = new Date(weekStart);
+  result.setDate(weekStart.getDate() + targetIndex - 1);
+  return result.toISOString().split('T')[0];
+}
+
+function findDayChunks(text) {
+  // Match giorni senza richiedere ^ o \n (più flessibile)
+  const dayNames = ['lunedì', 'lunedi', 'martedì', 'martedi', 'mercoledì', 'mercoledi', 'giovedì', 'giovedi', 'venerdì', 'venerdi', 'sabato', 'domenica'];
+  const pattern = new RegExp(`(${dayNames.join('|')})\\s*[:(]`, 'gi');
+  
+  const matches = [];
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    matches.push({
+      index: match.index,
+      keyword: match[1],
+      charAfter: text[match.index + match[1].length]
+    });
+  }
+
+  if (matches.length === 0) return [];
+
+  const chunks = [];
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    const next = matches[i + 1];
+    
+    // Trova l'inizio del testo dopo il giorno (dopo la parentesi/punteggiatura)
+    let textStart = current.index + current.keyword.length;
+    while (textStart < text.length && /[\s:(\-]/.test(text[textStart])) {
+      textStart++;
+    }
+    
+    const start = textStart;
+    const end = next ? next.index : text.length;
+    const raw = text.slice(start, end).trim();
+    const cleaned = raw.replace(/^[:\-\s]+/, '').trim();
+    
+    chunks.push({
+      weekday: current.keyword.toLowerCase(),
+      heading: current.keyword.trim(),
+      text: cleaned || raw
+    });
+  }
+  
+  return chunks;
+}
+
 function buildProxyRequest(provider, userPrompt) {
   const baseRequest = {
-    provider: provider,
+    provider,
     messages: [
       { role: 'system', content: AI_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt }
     ]
   };
 
+  if (provider === 'gemini') {
+    return {
+      ...baseRequest,
+      model: 'gemini-2.5-flash',
+      apiKey: import.meta.env.VITE_GEMINI_API_KEY
+    };
+  }
+  if (provider === 'groq') {
+    return {
+      ...baseRequest,
+      model: 'llama-3.1-70b-versatile',
+      apiKey: import.meta.env.VITE_GROQ_API_KEY
+    };
+  }
   if (provider === 'cloudflare') {
     return {
       ...baseRequest,
@@ -142,19 +170,22 @@ function buildProxyRequest(provider, userPrompt) {
       accountId: import.meta.env.VITE_CLOUDFLARE_ACCOUNT_ID,
       token: import.meta.env.VITE_CLOUDFLARE_API_TOKEN
     };
-  } else if (provider === 'huggingface') {
+  }
+  if (provider === 'huggingface') {
     return {
       ...baseRequest,
       model: 'mistralai/Mistral-7B-Instruct-v0.2',
       apiKey: import.meta.env.VITE_AI_API_KEY
     };
-  } else if (provider === 'openai') {
+  }
+  if (provider === 'openai') {
     return {
       ...baseRequest,
       model: 'gpt-4o',
       apiKey: import.meta.env.VITE_AI_API_KEY
     };
-  } else if (provider === 'anthropic') {
+  }
+  if (provider === 'anthropic') {
     return {
       ...baseRequest,
       model: 'claude-3-sonnet-20240229',
@@ -165,39 +196,256 @@ function buildProxyRequest(provider, userPrompt) {
   throw new Error(`Provider non supportato: ${provider}`);
 }
 
+async function parseSingleDay({ text, date, titleHint }) {
+  const provider = import.meta.env.VITE_AI_PROVIDER || 'cloudflare';
+
+  // Template con esempi concreti di esercizi
+  const jsonTemplate = `{
+  "session": {"date":"${date}","title":"${titleHint || 'Session'}","type":"pista","rpe":null,"feeling":null,"notes":null},
+  "groups": [
+    {"name":"Riscaldamento","order_index":0,"notes":null,"sets":[
+      {"exercise_name":"Corsa 2km","category":"endurance","sets":1,"reps":1,"weight_kg":null,"distance_m":2000,"time_s":null,"recovery_s":null,"notes":null,"details":{}}
+    ]},
+    {"name":"Lavoro Principale","order_index":1,"notes":null,"sets":[
+      {"exercise_name":"Sprint 100m","category":"sprint","sets":4,"reps":1,"weight_kg":null,"distance_m":100,"time_s":null,"recovery_s":180,"notes":null,"details":{}}
+    ]}
+  ]
+}`;
+
+  const userPrompt = `Extract training data and return ONLY valid JSON.
+
+Date: ${date}
+Title: ${titleHint}
+
+Text:
+${text}
+
+INSTRUCTIONS:
+1. Every exercise MUST have exercise_name (e.g. "Sprint 100m", "Squat", "Corsa")
+2. Every exercise MUST have category: one of [sprint, jump, lift, endurance, mobility, drill, other]
+3. Extract: sets, reps, weight_kg, distance_m, time_s, recovery_s (as numbers or null)
+4. Convert times: 6"70 → 6.7, 1:30 → 90, 2' → 120s
+5. Group logically: Warmup, Main, Strength, Cooldown, etc
+6. Session type: ONE of [pista, palestra, strada, gara, test, scarico, recupero, altro]
+
+Example structure:
+${jsonTemplate}
+
+Return ONLY valid JSON. Do not include markdown or explanations.`;
+  
+  const response = await fetch('http://localhost:5000', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildProxyRequest(provider, userPrompt))
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'Errore API AI');
+  }
+
+  const data = await response.json();
+  let rawContent = '';
+
+  if (data.choices) {
+    rawContent = data.choices[0].message.content;
+  } else if (data.content) {
+    rawContent = data.content[0].text;
+  } else {
+    rawContent = JSON.stringify(data);
+  }
+
+  // Estratto JSON dal response
+  let jsonStr = rawContent.trim();
+  
+  // Se avvolto in markdown, estrai
+  if (jsonStr.startsWith('```')) {
+    const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (match) jsonStr = match[1];
+  }
+
+  // Prova a trovare oggetto JSON
+  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error('[parseSingleDay] No JSON object found');
+    throw new Error('Risposta AI non contiene JSON');
+  }
+
+  jsonStr = jsonMatch[0];
+
+  try {
+    // Normalizza le stringhe multilinea
+    jsonStr = jsonStr.replace(/: "([^"]*)"\s*,/g, (match, value) => {
+      const sanitized = value.replace(/\n/g, ' ').replace(/"/g, '\\"');
+      return `: "${sanitized}",`;
+    });
+
+    // Fix: aggiungi { mancanti dopo array opening
+    jsonStr = jsonStr.replace(/\[\s*"(name|order_index)/g, '[{"$1');
+    jsonStr = jsonStr.replace(/\[\s*"name":/g, '[{"name":');
+
+    // Fix: chiudi oggetti in array se necessario
+    jsonStr = jsonStr.replace(/}(\s*),(\s*)\]/g, '}$1]');
+
+    // Rimuovi trailing comma
+    jsonStr = jsonStr.replace(/,(\s*[}\]])/g, '$1');
+
+    // Fix: aggiungi virgola mancante tra proprietà se "name" viene direttamente dopo [
+    jsonStr = jsonStr.replace(/\[\s*"name"/g, '[{"name"');
+
+    // Prova il parsing
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e) {
+      console.warn(`[parseSingleDay] First parse attempt failed, trying cleanup...`);
+      
+      // Fallback: rimuovi le parti malformate e mantieni quello che c'è
+      // Estrai session
+      const sessionMatch = jsonStr.match(/"session"\s*:\s*\{[^{}]*\}/);
+      const sessionStr = sessionMatch ? sessionMatch[0] : '{"date":"' + date + '","title":"Session","type":"altro","rpe":null,"feeling":null,"notes":null}';
+      
+      // Estrai groups più semplicemente
+      const groupsMatch = jsonStr.match(/"groups"\s*:\s*\[([\s\S]*)\]\s*\}/);
+      let groupsStr = '[]';
+      if (groupsMatch) {
+        try {
+          // Prova a parsare i groups come array
+          groupsStr = '[' + groupsMatch[1] + ']';
+          // Valida che sia almeno parsabile
+          JSON.parse(groupsStr);
+        } catch {
+          // Se fallisce, crea un placeholder
+          groupsStr = '[{"name":"Sessione","order_index":0,"notes":null,"sets":[{"exercise_name":"Sessione registrata","category":"other","sets":1,"reps":1,"weight_kg":null,"distance_m":null,"time_s":null,"recovery_s":null,"notes":null,"details":{}}]}]';
+        }
+      }
+
+      // Ricostruisci il JSON
+      try {
+        parsed = {
+          session: JSON.parse(sessionStr),
+          groups: JSON.parse(groupsStr)
+        };
+      } catch (e2) {
+        console.error(`[parseSingleDay] Fallback also failed, using minimal structure`);
+        parsed = {
+          session: { date, title: 'Session', type: 'altro', rpe: null, feeling: null, notes: null },
+          groups: [{
+            name: 'Sessione',
+            order_index: 0,
+            notes: null,
+            sets: [{
+              exercise_name: 'Sessione registrata',
+              category: 'other',
+              sets: 1,
+              reps: 1,
+              weight_kg: null,
+              distance_m: null,
+              time_s: null,
+              recovery_s: null,
+              notes: 'Contenuto estratto',
+              details: {}
+            }]
+          }]
+        };
+      }
+    }
+
+    // Garantisci struttura
+    if (!parsed.session) parsed.session = {};
+    if (!parsed.groups) parsed.groups = [];
+
+    parsed.session.date = date;
+    if (titleHint && !parsed.session.title) parsed.session.title = titleHint;
+
+    // Valida e ripulisci groups
+    parsed.groups = parsed.groups.map(group => ({
+      ...group,
+      sets: (group.sets || [])
+        .filter(set => set && set.exercise_name && set.exercise_name.trim())
+        .map(set => ({
+          exercise_name: (set.exercise_name || 'Unknown').trim(),
+          category: set.category || 'other',
+          sets: parseInt(set.sets) || 1,
+          reps: parseInt(set.reps) || 1,
+          weight_kg: set.weight_kg ? parseFloat(set.weight_kg) : null,
+          distance_m: set.distance_m ? parseFloat(set.distance_m) : null,
+          time_s: set.time_s ? parseFloat(set.time_s) : null,
+          recovery_s: set.recovery_s ? parseFloat(set.recovery_s) : null,
+          notes: set.notes || null,
+          details: set.details || {}
+        }))
+    }))
+    .filter(group => group.sets && group.sets.length > 0);
+
+    // Valida type
+    const validTypes = ['pista', 'palestra', 'strada', 'gara', 'test', 'scarico', 'recupero', 'altro'];
+    if (parsed.session.type && !validTypes.includes(parsed.session.type.toLowerCase())) {
+      parsed.session.type = 'altro';
+    }
+
+    return parsed;
+  } catch (e) {
+    console.error(`[parseSingleDay] Final error: ${e.message}`);
+    throw new Error(`Parsing ${date}: ${e.message}`);
+  }
+}
+
 /**
- * Valida i dati parsati dall'AI
+ * Interpreta testo di allenamento. Supporta più giorni nello stesso input.
+ * - Se trova intestazioni con giorni (lunedì/martedì...), crea una sessione per ciascuna.
+ * - Se non trova giorni, considera una sola sessione datata oggi.
  */
-export function validateParsedData(data) {
+export async function parseTrainingWithAI(trainingText, referenceDate = new Date()) {
+  const trimmed = trainingText?.trim();
+  if (!trimmed) throw new Error('Testo allenamento vuoto');
+  
+  const chunks = findDayChunks(trimmed);
+
+  // Caso multi-giorno
+  if (chunks.length > 0) {
+    const sessions = [];
+    for (const chunk of chunks) {
+      const targetDate = dateForWeekday(chunk.weekday, referenceDate);
+      const parsed = await parseSingleDay({
+        text: chunk.text,
+        date: targetDate,
+        titleHint: chunk.heading
+      });
+      sessions.push(parsed);
+    }
+    return { sessions };
+  }
+
+  // Caso singolo giorno → data = oggi/reference
+  const singleDate = new Date(referenceDate).toISOString().split('T')[0];
+  const parsed = await parseSingleDay({ text: trimmed, date: singleDate, titleHint: null });
+  return { sessions: [parsed] };
+}
+
+function validateSingleSession(data) {
   const errors = [];
 
-  // Valida sessione
   if (!data.session) {
     errors.push('Mancano i dati della sessione');
   } else {
     if (!data.session.date) errors.push('Data sessione mancante');
     if (!data.session.type) errors.push('Tipo sessione mancante');
-    
+
     const validTypes = ['pista', 'palestra', 'strada', 'gara', 'test', 'scarico', 'recupero', 'altro'];
-    
-    // Normalizza il tipo sessione: gestisci parole fuse o separate
     let sessionType = data.session.type;
     if (sessionType && typeof sessionType === 'string') {
       sessionType = sessionType.toLowerCase().trim();
-      
-      // Se contiene virgola, prendi il primo (sessione mista dichiarata)
+
       if (sessionType.includes(',')) {
         sessionType = sessionType.split(',')[0].trim();
       }
-      
-      // Se contiene spazi/connettori, prova a separare e validare
-      if (sessionType.includes(' ') || sessionType.includes('-') || sessionType.includes('_')) {
-        const parts = sessionType.split(/[\s\-_,]+/).filter(p => p.length > 0);
-        // Prendi il primo parte valida
+
+      if (sessionType.match(/[\s\-_,]+/)) {
+        const parts = sessionType.split(/[\s\-_,]+/).filter(Boolean);
         sessionType = parts.find(p => validTypes.includes(p)) || parts[0];
       }
-      
-      // Se contiene parole fuse (es: "palestrapista"), prova a estrarre valide
+
       if (!validTypes.includes(sessionType)) {
         for (const type of validTypes) {
           if (sessionType.includes(type)) {
@@ -206,42 +454,102 @@ export function validateParsedData(data) {
           }
         }
       }
-      
-      data.session.type = sessionType; // Normalizza
+
+      data.session.type = sessionType;
     }
-    
+
     if (sessionType && !validTypes.includes(sessionType)) {
       errors.push(`Tipo sessione non valido: ${sessionType}`);
     }
 
     if (data.session.rpe !== null && data.session.rpe !== undefined) {
-      const rpe = parseInt(data.session.rpe);
-      if (isNaN(rpe) || rpe < 0 || rpe > 10) {
+      const rpe = parseInt(data.session.rpe, 10);
+      if (Number.isNaN(rpe) || rpe < 0 || rpe > 10) {
         errors.push('RPE deve essere tra 0 e 10');
       }
     }
   }
 
-  // Valida gruppi ed esercizi
   if (!data.groups || !Array.isArray(data.groups)) {
-    errors.push('Mancano i gruppi di esercizi');
+    console.warn('[validateSingleSession] No groups found, creating placeholder');
+    data.groups = [];
+  }
+
+  if (data.groups.length === 0) {
+    // Crea un gruppo placeholder se non ci sono gruppi
+    console.warn('[validateSingleSession] Adding placeholder group for session');
+    data.groups = [{
+      name: 'Sessione',
+      order_index: 0,
+      notes: 'Sessione auto-creata',
+      sets: [{
+        exercise_name: 'Sessione registrata',
+        category: 'other',
+        sets: 1,
+        reps: 1,
+        weight_kg: null,
+        distance_m: null,
+        time_s: null,
+        recovery_s: null,
+        notes: 'Contenuto estratto dal testo',
+        details: {}
+      }]
+    }];
   } else {
+    const validCategories = ['sprint', 'jump', 'lift', 'endurance', 'mobility', 'drill', 'other'];
     data.groups.forEach((group, idx) => {
       if (!group.sets || !Array.isArray(group.sets) || group.sets.length === 0) {
-        errors.push(`Gruppo ${idx + 1} non contiene esercizi`);
+        console.warn(`[validateSingleSession] Group ${idx + 1} is empty, adding placeholder`);
+        group.sets = [{
+          exercise_name: group.name || 'Esercizio',
+          category: 'other',
+          sets: 1,
+          reps: 1,
+          weight_kg: null,
+          distance_m: null,
+          time_s: null,
+          recovery_s: null,
+          notes: null,
+          details: {}
+        }];
       }
-      
-      const validCategories = ['sprint', 'jump', 'lift', 'endurance', 'mobility', 'drill', 'other'];
+
       group.sets?.forEach((set, setIdx) => {
         if (!set.exercise_name) {
-          errors.push(`Esercizio ${setIdx + 1} nel gruppo ${idx + 1} senza nome`);
+          console.warn(`[validateSingleSession] Set ${setIdx + 1} in group ${idx + 1} has no name, using group name`);
+          set.exercise_name = group.name || 'Esercizio senza nome';
         }
         if (set.category && !validCategories.includes(set.category)) {
-          errors.push(`Categoria non valida per esercizio "${set.exercise_name}"`);
+          console.warn(`[validateSingleSession] Invalid category "${set.category}", using "other"`);
+          set.category = 'other';
         }
       });
     });
   }
+
+  return errors;
+}
+
+/**
+ * Valida dati parsati. Supporta sia {session,...} (legacy) sia {sessions:[...]} (multi).
+ */
+export function validateParsedData(data) {
+  if (!data) return { valid: false, errors: ['Nessun dato parsato'] };
+
+  const sessions = Array.isArray(data.sessions) && data.sessions.length > 0
+    ? data.sessions
+    : data.session
+      ? [data]
+      : [];
+
+  if (sessions.length === 0) {
+    return { valid: false, errors: ['Nessuna sessione trovata'] };
+  }
+
+  const errors = sessions.flatMap((s, idx) => {
+    const errs = validateSingleSession(s);
+    return errs.map(e => `Sessione ${idx + 1}: ${e}`);
+  });
 
   return {
     valid: errors.length === 0,

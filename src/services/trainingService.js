@@ -8,71 +8,103 @@ import { standardizeTrainingSession } from '../utils/standardizer.js';
  * @returns {Promise<Object>} Saved session data with ID
  * @throws {Error} If database operation fails
  */
-export async function saveTrainingSession(parsedData) {
-  try {
-    // 0. Standardizza i dati per coerenza (esercizi, tempi, recuperi)
-    const standardizedData = standardizeTrainingSession(parsedData);
-    
-    // 1. Inserisci la sessione principale
-    const { data: session, error: sessionError } = await supabase
-      .from('training_sessions')
+async function insertTrainingSession(parsedData) {
+  const standardizedData = standardizeTrainingSession(parsedData);
+
+  // 1. Inserisci la sessione principale
+  const { data: session, error: sessionError } = await supabase
+    .from('training_sessions')
+    .insert([{
+      date: standardizedData.session.date,
+      title: standardizedData.session.title,
+      type: standardizedData.session.type,
+      location: standardizedData.session.location || null,
+      rpe: standardizedData.session.rpe || null,
+      feeling: standardizedData.session.feeling || null,
+      notes: standardizedData.session.notes || null,
+    }])
+    .select()
+    .single();
+  if (sessionError) throw sessionError;
+
+  // 2. Inserisci i gruppi di esercizi
+  for (const [index, group] of standardizedData.groups.entries()) {
+    const { data: workoutGroup, error: groupError } = await supabase
+      .from('workout_groups')
       .insert([{
-        date: standardizedData.session.date,
-        title: standardizedData.session.title,
-        type: standardizedData.session.type,
-        location: standardizedData.session.location || null,
-        rpe: standardizedData.session.rpe || null,
-        feeling: standardizedData.session.feeling || null,
-        notes: standardizedData.session.notes || null,
+        session_id: session.id,
+        order_index: group.order_index ?? index,
+        name: group.name,
+        notes: group.notes || null,
       }])
       .select()
       .single();
-    if (sessionError) throw sessionError;
 
-    // 2. Inserisci i gruppi di esercizi
-    for (const [index, group] of standardizedData.groups.entries()) {
-      const { data: workoutGroup, error: groupError } = await supabase
-        .from('workout_groups')
-        .insert([{
-          session_id: session.id,
-          order_index: group.order_index ?? index,
-          name: group.name,
-          notes: group.notes || null,
-        }])
-        .select()
-        .single();
+    if (groupError) throw groupError;
 
-      if (groupError) throw groupError;
+    // 3. Inserisci i set di esercizi per questo gruppo
+    if (group.sets && group.sets.length > 0) {
+      const setsToInsert = group.sets.map(set => ({
+        group_id: workoutGroup.id,
+        exercise_name: set.exercise_name,
+        category: set.category || null,
+        sets: set.sets || 1,
+        reps: set.reps || 1,
+        weight_kg: set.weight_kg || null,
+        distance_m: set.distance_m || null,
+        time_s: set.time_s || null,
+        recovery_s: set.recovery_s || null,
+        details: set.details || {},
+        notes: set.notes || null,
+      }));
 
-      // 3. Inserisci i set di esercizi per questo gruppo
-      if (group.sets && group.sets.length > 0) {
-        const setsToInsert = group.sets.map(set => ({
-          group_id: workoutGroup.id,
-          exercise_name: set.exercise_name,
-          category: set.category || null,
-          sets: set.sets || 1,
-          reps: set.reps || 1,
-          weight_kg: set.weight_kg || null,
-          distance_m: set.distance_m || null,
-          time_s: set.time_s || null,
-          recovery_s: set.recovery_s || null,
-          details: set.details || {},
-          notes: set.notes || null,
-        }));
+      const { error: setsError } = await supabase
+        .from('workout_sets')
+        .insert(setsToInsert);
 
-        const { error: setsError } = await supabase
-          .from('workout_sets')
-          .insert(setsToInsert);
-
-        if (setsError) throw setsError;
-      }
+      if (setsError) throw setsError;
     }
+  }
 
-    return { success: true, sessionId: session.id };
+  return { success: true, sessionId: session.id };
+}
+
+/**
+ * Salva una singola sessione (retrocompatibilità)
+ */
+export async function saveTrainingSession(parsedData) {
+  try {
+    return await insertTrainingSession(parsedData);
   } catch (error) {
     console.error('Errore nel salvataggio:', error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Salva più sessioni in sequenza (per input multi-giorno)
+ */
+export async function saveTrainingSessions(parsedPayload) {
+  const sessions = Array.isArray(parsedPayload.sessions)
+    ? parsedPayload.sessions
+    : [parsedPayload];
+
+  const savedIds = [];
+
+  for (const [idx, session] of sessions.entries()) {
+    try {
+      const result = await insertTrainingSession(session);
+      if (!result.success) {
+        return { success: false, error: `Sessione ${idx + 1}: ${result.error}`, savedIds };
+      }
+      savedIds.push(result.sessionId);
+    } catch (error) {
+      console.error('Errore nel salvataggio multi-sessione:', error);
+      return { success: false, error: `Sessione ${idx + 1}: ${error.message}`, savedIds };
+    }
+  }
+
+  return { success: true, sessionIds: savedIds };
 }
 
 /**

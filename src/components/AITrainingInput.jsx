@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { Sparkles, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { parseTrainingWithAI, validateParsedData } from '../services/aiParser';
-import { saveTrainingSession } from '../services/trainingService';
+import { saveTrainingSessions } from '../services/trainingService';
 
 export default function AITrainingInput() {
   const [trainingText, setTrainingText] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
   const [parsedData, setParsedData] = useState(null);
   const [error, setError] = useState(null);
@@ -23,7 +22,7 @@ export default function AITrainingInput() {
     setSuccess(false);
 
     try {
-      const parsed = await parseTrainingWithAI(trainingText, new Date(date));
+      const parsed = await parseTrainingWithAI(trainingText);
       
       // Valida i dati
       const validation = validateParsedData(parsed);
@@ -48,7 +47,7 @@ export default function AITrainingInput() {
     setError(null);
 
     try {
-      const result = await saveTrainingSession(parsedData);
+      const result = await saveTrainingSessions(parsedData);
       
       if (result.success) {
         setSuccess(true);
@@ -85,19 +84,6 @@ export default function AITrainingInput() {
 
         {/* Input principale */}
         <div className="p-6 space-y-4">
-          {/* Data */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Data Allenamento
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-          </div>
-
           {/* Textarea */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -149,7 +135,9 @@ export default function AITrainingInput() {
             <div className="p-4 bg-green-900/30 border border-green-700 rounded-lg flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-green-400" />
               <div className="text-sm text-green-200">
-                Sessione salvata con successo!
+                {parsedData?.sessions?.length > 1
+                  ? 'Sessioni salvate con successo!'
+                  : 'Sessione salvata con successo!'}
               </div>
             </div>
           )}
@@ -163,45 +151,54 @@ export default function AITrainingInput() {
                   Anteprima Interpretazione
                 </h3>
 
-                {/* Sessione */}
-                <div className="bg-slate-700/50 rounded-lg p-4 mb-3">
-                  <h4 className="font-medium text-white mb-2">{parsedData.session.title || 'Sessione'}</h4>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="text-gray-400">Tipo:</div>
-                    <div className="text-white capitalize">{parsedData.session.type}</div>
-                    {parsedData.session.rpe && (
-                      <>
-                        <div className="text-gray-400">RPE:</div>
-                        <div className="text-white">{parsedData.session.rpe}/10</div>
-                      </>
-                    )}
-                    {parsedData.session.feeling && (
-                      <>
-                        <div className="text-gray-400">Sensazione:</div>
-                        <div className="text-white">{parsedData.session.feeling}</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Gruppi ed esercizi */}
-                {parsedData.groups.map((group, idx) => (
-                  <div key={idx} className="bg-slate-700/30 rounded-lg p-4 mb-3">
-                    <h5 className="font-medium text-primary-300 mb-2">{group.name}</h5>
-                    <div className="space-y-2">
-                      {group.sets.map((set, setIdx) => (
-                        <div key={setIdx} className="text-sm text-gray-300 pl-3 border-l-2 border-primary-500">
-                          <span className="font-medium">{set.exercise_name}</span>
-                          {set.sets > 1 && <span> • {set.sets} serie</span>}
-                          {set.reps > 1 && <span> • {set.reps} reps</span>}
-                          {set.distance_m && <span> • {set.distance_m}m</span>}
-                          {set.weight_kg && <span> • {set.weight_kg}kg</span>}
-                          {set.time_s && <span> • {set.time_s}s</span>}
-                          {set.recovery_s && <span> • rec {set.recovery_s}s</span>}
-                          <span className="text-xs text-gray-500 ml-2">({set.category})</span>
-                        </div>
-                      ))}
+                {parsedData.sessions.map((sessionWrapper, sessionIdx) => (
+                  <div key={sessionIdx} className="mb-6 bg-slate-700/50 rounded-lg p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div>
+                        <p className="text-xs text-gray-400">Data</p>
+                        <p className="text-white font-semibold">{sessionWrapper.session.date}</p>
+                      </div>
+                      <div className="text-sm text-gray-300">Sessione {sessionIdx + 1} di {parsedData.sessions.length}</div>
                     </div>
+
+                    <h4 className="font-medium text-white mb-2">{sessionWrapper.session.title || 'Sessione'}</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="text-gray-400">Tipo:</div>
+                      <div className="text-white capitalize">{sessionWrapper.session.type}</div>
+                      {sessionWrapper.session.rpe && (
+                        <>
+                          <div className="text-gray-400">RPE:</div>
+                          <div className="text-white">{sessionWrapper.session.rpe}/10</div>
+                        </>
+                      )}
+                      {sessionWrapper.session.feeling && (
+                        <>
+                          <div className="text-gray-400">Sensazione:</div>
+                          <div className="text-white">{sessionWrapper.session.feeling}</div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Gruppi ed esercizi */}
+                    {sessionWrapper.groups.map((group, idx) => (
+                      <div key={idx} className="bg-slate-700/30 rounded-lg p-4 mt-3">
+                        <h5 className="font-medium text-primary-300 mb-2">{group.name}</h5>
+                        <div className="space-y-2">
+                          {group.sets.map((set, setIdx) => (
+                            <div key={setIdx} className="text-sm text-gray-300 pl-3 border-l-2 border-primary-500">
+                              <span className="font-medium">{set.exercise_name}</span>
+                              {set.sets > 1 && <span> • {set.sets} serie</span>}
+                              {set.reps > 1 && <span> • {set.reps} reps</span>}
+                              {set.distance_m && <span> • {set.distance_m}m</span>}
+                              {set.weight_kg && <span> • {set.weight_kg}kg</span>}
+                              {set.time_s && <span> • {set.time_s}s</span>}
+                              {set.recovery_s && <span> • rec {set.recovery_s}s</span>}
+                              <span className="text-xs text-gray-500 ml-2">({set.category})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -221,7 +218,7 @@ export default function AITrainingInput() {
                   ) : (
                     <>
                       <CheckCircle2 className="w-5 h-5" />
-                      Salva nel Database
+                      Salva {parsedData.sessions.length > 1 ? 'tutte le sessioni' : 'nel Database'}
                     </>
                   )}
                 </button>
@@ -250,6 +247,9 @@ export default function AITrainingInput() {
           </div>
           <div className="bg-slate-700/30 p-3 rounded">
             <strong className="text-primary-300">Misto:</strong> "Pista mattina: 6x200m rec 3min. Pomeriggio palestra: gambe, squat 3x8 85kg, affondi 3x10"
+          </div>
+          <div className="bg-slate-700/30 p-3 rounded">
+            <strong className="text-primary-300">Settimana intera:</strong> "Lunedì test 150m e 60m... Martedì tecnica 3x120m... Venerdì 3x4x100m + 150m finale" (le date vengono assegnate automaticamente ai giorni indicati)
           </div>
         </div>
       </div>

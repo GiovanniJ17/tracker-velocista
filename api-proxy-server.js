@@ -1,10 +1,6 @@
 /**
  * Express API Proxy Server
- * Supports multiple AI providers:
- * - Cloudflare Workers AI (FREE - recommended for Cloudflare Pages)
- * - Hugging Face Inference API (FREE)
- * - OpenAI (paid)
- * - Anthropic (paid)
+ * Supports multiple AI providers including Google Gemini
  */
 
 import express from 'express';
@@ -29,7 +25,7 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   res.json({ 
     status: '✅ API Proxy running on port 5000',
-    providers: ['cloudflare', 'huggingface', 'openai', 'anthropic']
+    providers: ['gemini', 'groq', 'cloudflare', 'openai', 'anthropic']
   });
 });
 
@@ -46,16 +42,21 @@ app.post('/', async (req, res) => {
 
     let apiResponse;
 
-    if (provider === 'cloudflare') {
+    if (provider === 'gemini') {
+      if (!apiKey) {
+        return res.status(400).json({ error: 'Gemini: API key è obbligatorio' });
+      }
+      apiResponse = await callGemini(messages, model || 'gemini-2.5-flash', apiKey);
+    } else if (provider === 'groq') {
+      if (!apiKey) {
+        return res.status(400).json({ error: 'Groq: API key è obbligatorio' });
+      }
+      apiResponse = await callGroq(messages, model || 'llama-3.1-70b-versatile', apiKey);
+    } else if (provider === 'cloudflare') {
       if (!accountId || !token) {
         return res.status(400).json({ error: 'Cloudflare: accountId e token sono obbligatori' });
       }
       apiResponse = await callCloudflareAI(messages, model || '@hf/mistral/mistral-7b-instruct-v0.2', accountId, token);
-    } else if (provider === 'huggingface') {
-      if (!apiKey) {
-        return res.status(400).json({ error: 'Hugging Face: API key è obbligatorio' });
-      }
-      apiResponse = await callHuggingFace(messages, model || 'mistralai/Mistral-7B-Instruct-v0.2', apiKey);
     } else if (provider === 'openai') {
       if (!apiKey) {
         return res.status(400).json({ error: 'OpenAI: API key è obbligatorio' });
@@ -78,13 +79,100 @@ app.post('/', async (req, res) => {
   }
 });
 
+async function callGemini(messages, model, apiKey) {
+  console.log('📡 Calling Google Gemini API...');
+  console.log(`   Model: ${model}`);
+  
+  // Combina i messaggi in un singolo prompt
+  const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
+  const userContent = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userContent}` : userContent;
+  
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: fullPrompt }]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 8192
+        }
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Gemini Error:', JSON.stringify(data, null, 2));
+      throw new Error(data.error?.message || `Gemini API error: ${response.statusText}`);
+    }
+
+    // Estrai il testo dalla risposta di Gemini
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    console.log('✅ Gemini response received');
+    
+    // Trasforma in formato compatibile (OpenAI-like)
+    return {
+      choices: [{
+        message: {
+          content: text
+        }
+      }]
+    };
+  } catch (error) {
+    console.error('❌ Gemini call failed:', error.message);
+    throw error;
+  }
+}
+
+async function callGroq(messages, model, apiKey) {
+  console.log('📡 Calling Groq API...');
+  const finalModel = model || 'llama-3.1-70b-versatile';
+  console.log(`   Model: ${finalModel}`);
+  
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: finalModel,
+        messages: messages,
+        temperature: 0.1,
+        max_tokens: 4096
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Groq Error:', JSON.stringify(data, null, 2));
+      throw new Error(data.error?.message || 'Groq API error');
+    }
+
+    console.log('✅ Groq response received');
+    return data;
+  } catch (error) {
+    console.error('❌ Groq call failed:', error.message);
+    throw error;
+  }
+}
+
 async function callCloudflareAI(messages, model, accountId, token) {
   console.log('📡 Calling Cloudflare Workers AI...');
   
-  // Estrai il sistema prompt e il contenuto dall'ultima domanda
   const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
   const userContent = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
-  
   const prompt = systemPrompt ? `${systemPrompt}\n\n${userContent}` : userContent;
 
   try {
@@ -110,7 +198,6 @@ async function callCloudflareAI(messages, model, accountId, token) {
       throw new Error(data.errors?.[0]?.message || 'Cloudflare AI error');
     }
 
-    // Trasforma la risposta in formato simile a OpenAI per compatibilità
     return {
       choices: [{
         message: {
@@ -120,48 +207,6 @@ async function callCloudflareAI(messages, model, accountId, token) {
     };
   } catch (error) {
     console.error('❌ Cloudflare call failed:', error.message);
-    throw error;
-  }
-}
-
-async function callHuggingFace(messages, model, apiKey) {
-  console.log('📡 Calling Hugging Face Inference API...');
-  
-  const userContent = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
-
-  try {
-    const response = await fetch(
-      `https://api-inference.huggingface.co/models/${model}`,
-      {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        method: 'POST',
-        body: JSON.stringify({
-          inputs: userContent,
-          parameters: {
-            max_length: 4096,
-            temperature: 0.1
-          }
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Hugging Face Error:', data.error);
-      throw new Error(data.error || 'Hugging Face API error');
-    }
-
-    // Trasforma la risposta
-    return {
-      choices: [{
-        message: {
-          content: Array.isArray(data) ? data[0].generated_text : data.generated_text
-        }
-      }]
-    };
-  } catch (error) {
-    console.error('❌ Hugging Face call failed:', error.message);
     throw error;
   }
 }
@@ -179,7 +224,6 @@ async function callOpenAI(messages, model, apiKey) {
       body: JSON.stringify({
         model: model,
         messages: messages,
-        response_format: { type: 'json_object' },
         temperature: 0.1
       })
     });
@@ -234,7 +278,7 @@ app.listen(PORT, () => {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`🔌 API Proxy Server STARTED`);
   console.log(`📍 Listening on http://localhost:${PORT}`);
-  console.log(`📨 Ready to proxy AI requests`);
+  console.log(`📨 Ready to proxy AI requests (Gemini, Groq, OpenAI, Anthropic)`);
   console.log(`${'='.repeat(60)}\n`);
 });
 
