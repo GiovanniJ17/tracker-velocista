@@ -96,6 +96,16 @@ Leggi [SETUP.md](SETUP.md) per istruzioni dettagliate su:
 3. Deploy Cloudflare Pages
 4. Troubleshooting
 
+## 🌐 Deployed Production
+
+L'app è live su **Cloudflare Pages**:
+- **URL**: https://training-log.pages.dev
+- **Provider**: Mistral 7B via Cloudflare Workers AI (FREE)
+- **Database**: Supabase PostgreSQL
+- **Updates**: Automatici su push GitHub
+
+**Per il tuo deployment personale**, vedi [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
+
 ## 💡 Esempi di Input
 
 ### Esempio 1: Pista
