@@ -3,6 +3,17 @@ import { Sparkles, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { parseTrainingWithAI, validateParsedData } from '../services/aiParser';
 import { saveTrainingSessions } from '../services/trainingService';
 
+function friendlyErrorMessage(message) {
+  const text = (message || '').toLowerCase();
+  if (text.includes('quota') || text.includes('exceeded')) {
+    return 'Quota Gemini esaurita: genera una nuova API key o attiva il billing su Google AI Studio.';
+  }
+  if (text.includes('api key') || text.includes('key was reported as leaked')) {
+    return 'API key Gemini non valida o revocata: aggiorna la chiave nelle variabili di ambiente.';
+  }
+  return message || 'Errore sconosciuto';
+}
+
 export default function AITrainingInput() {
   const [trainingText, setTrainingText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +45,7 @@ export default function AITrainingInput() {
 
       setParsedData(parsed);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyErrorMessage(err.message));
     } finally {
       setLoading(false);
     }
@@ -60,7 +71,7 @@ export default function AITrainingInput() {
         setError(result.error);
       }
     } catch (err) {
-      setError(err.message);
+      setError(friendlyErrorMessage(err.message));
     } finally {
       setLoading(false);
     }

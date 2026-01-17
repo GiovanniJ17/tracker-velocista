@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "proxy": "node api-proxy-server.js",
-    "worker:dev": "wrangler dev src/workers/aiProxy.js --local",
+    "worker:dev": "wrangler dev --config wrangler-ai-proxy.toml --local",
     "build": "vite build",
     "preview": "vite preview",
     "pages:build": "npm run build",
