@@ -5,7 +5,7 @@ node_modules/
 dist/
 .output/
 
-# Environment variables
+# Environment variables (secrets!)
 .env
 .env.local
 .env.*.local
@@ -21,3 +21,8 @@ Thumbs.db
 # Wrangler
 .wrangler/
 .dev.vars
+
+# Cache
+.cache/
+.eslintcache
+.turbo/

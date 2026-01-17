@@ -1,3 +1,21 @@
+---
+status: archived
+reason: "Outdated deployment notes; replaced by current checklists"
+last_updated: "2026-01-17"
+---
+
+# LIVE (Archivio)
+
+Questa pagina contiene note storiche di un precedente deploy (tracker-velocista.pages.dev). Le istruzioni aggiornate sono in:
+
+- CLOUDFLARE_DEPLOYMENT.md
+- DEPLOY_CHECKLIST.md
+- DEPLOYMENT_CHECKLIST.md
+
+Contenuto originale mantenuto per riferimento storico.
+
+---
+
 # 🚀 Training Log - LIVE su Cloudflare Pages!
 
 ## ✅ Deployment Completato
