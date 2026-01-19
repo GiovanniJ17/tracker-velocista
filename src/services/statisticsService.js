@@ -217,6 +217,9 @@ function calculateStreak(sessions) {
 /**
  * Prepara dati per grafico progressione tempi
  */
+/**
+ * Prepara dati per grafico progressione tempi (safe date handling)
+ */
 export function getProgressionChartData(raceRecords) {
   const recordsByDistance = {};
 
@@ -228,23 +231,23 @@ export function getProgressionChartData(raceRecords) {
     recordsByDistance[distance].push(record);
   });
 
-  // Per ogni distanza, ordina per data e prepara i dati
   const chartData = [];
 
   Object.entries(recordsByDistance).forEach(([distance, records]) => {
     const sortedRecords = records.sort((a, b) => {
-      const dateA = a.date || a.created_at;
-      const dateB = b.date || b.created_at;
-      return new Date(dateA) - new Date(dateB);
+      const dateA = new Date(a.date || a.created_at).getTime() || 0;
+      const dateB = new Date(b.date || b.created_at).getTime() || 0;
+      return dateA - dateB;
     });
 
-    sortedRecords.forEach((record, idx) => {
-      const date = record.date || record.created_at;
-      const key = `${distance}m`;
+    sortedRecords.forEach((record) => {
+      const dateVal = record.date || record.created_at;
+      if (!dateVal) return; // skip if missing date
 
-      let item = chartData.find(d => d.date === date);
+      const key = `${distance}m`;
+      let item = chartData.find(d => d.date === dateVal);
       if (!item) {
-        item = { date };
+        item = { date: dateVal };
         chartData.push(item);
       }
 
@@ -252,7 +255,11 @@ export function getProgressionChartData(raceRecords) {
     });
   });
 
-  return chartData.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return chartData.sort((a, b) => {
+    const da = new Date(a.date).getTime() || 0;
+    const db = new Date(b.date).getTime() || 0;
+    return da - db;
+  });
 }
 
 /**
@@ -399,14 +406,22 @@ export function getInjuryTimeline(injuries, raceRecords) {
 /**
  * Calcola metriche mensili
  */
+/**
+ * Calcola metriche mensili (safe date handling)
+ */
 export function getMonthlyMetrics(sessions, raceRecords) {
   const monthlyData = {};
 
   raceRecords.forEach(record => {
     const rawDate = record.date || record.created_at;
-    const date = new Date(rawDate);
-    if (Number.isNaN(date.getTime())) return;
-    const monthKey = format(date, 'yyyy-MM');
+    const dateObj = new Date(rawDate);
+
+    if (!rawDate || Number.isNaN(dateObj.getTime())) {
+      console.warn('Data non valida trovata in record:', record);
+      return;
+    }
+
+    const monthKey = format(dateObj, 'yyyy-MM');
 
     if (!monthlyData[monthKey]) {
       monthlyData[monthKey] = {
