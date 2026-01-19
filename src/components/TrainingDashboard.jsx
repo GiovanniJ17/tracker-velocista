@@ -18,6 +18,11 @@ import {
   getMonthlyMetrics,
   exportToCSV,
 } from '../services/statisticsService';
+import {
+  getWeeklyInsight,
+  getWhatIfPrediction,
+  getAdaptiveWorkoutSuggestion,
+} from '../services/aiCoachService';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
@@ -35,6 +40,16 @@ export default function TrainingDashboard() {
   const [monthlyMetrics, setMonthlyMetrics] = useState([]);
   const [selectedDistance, setSelectedDistance] = useState(null);
   const [rawData, setRawData] = useState({ sessions: [], raceRecords: [], trainingRecords: [], strengthRecords: [], injuries: [] });
+  const [coachInsight, setCoachInsight] = useState(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachError, setCoachError] = useState(null);
+  const [whatIfInput, setWhatIfInput] = useState({ distance: null, exercise: '', targetWeight: '' });
+  const [whatIfResult, setWhatIfResult] = useState(null);
+  const [whatIfLoading, setWhatIfLoading] = useState(false);
+  const [adaptiveFocus, setAdaptiveFocus] = useState('');
+  const [adaptiveResult, setAdaptiveResult] = useState(null);
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -113,6 +128,11 @@ export default function TrainingDashboard() {
     return Array.from(keys).sort((a, b) => a - b);
   }, [progressionData]);
 
+  const strengthExercises = useMemo(() => {
+    const keys = new Set(rawData.strengthRecords.map((s) => s.exercise_name).filter(Boolean));
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [rawData.strengthRecords]);
+
   const scatterDistances = useMemo(() => {
     const keys = new Set(scatterData.map((d) => d.distance));
     return Array.from(keys).sort((a, b) => a - b);
@@ -128,8 +148,75 @@ export default function TrainingDashboard() {
     setSelectedDistance((prev) => (prev && scatterDistances.includes(prev) ? prev : scatterDistances[0]));
   }, [scatterDistances]);
 
+  useEffect(() => {
+    if (!whatIfInput.distance && availableDistances.length) {
+      setWhatIfInput((p) => ({ ...p, distance: availableDistances[0] }));
+    }
+  }, [availableDistances, whatIfInput.distance]);
+
+  useEffect(() => {
+    if (!whatIfInput.exercise && strengthExercises.length) {
+      setWhatIfInput((p) => ({ ...p, exercise: strengthExercises[0] }));
+    }
+  }, [strengthExercises, whatIfInput.exercise]);
+
   const handleExportCSV = () => {
     exportToCSV(rawData.sessions, rawData.raceRecords, `training-stats-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+  };
+
+  const handleGenerateInsight = async () => {
+    if (!rawData.sessions.length && !rawData.raceRecords.length) return;
+    setCoachLoading(true);
+    setCoachError(null);
+    setCoachInsight(null);
+    const payload = {
+      sessions: rawData.sessions,
+      raceRecords: rawData.raceRecords,
+      strengthRecords: rawData.strengthRecords,
+      kpis: kpis || {},
+      progressionData,
+    };
+    const res = await getWeeklyInsight(payload);
+    setCoachLoading(false);
+    if (res.success) {
+      setCoachInsight(res.data);
+    } else {
+      setCoachError(res.error);
+    }
+  };
+
+  const handleWhatIf = async () => {
+    const distance = whatIfInput.distance || availableDistances[0];
+    const exercise = whatIfInput.exercise || strengthExercises[0];
+    const targetWeight = Number(whatIfInput.targetWeight);
+    if (!distance || !exercise || !targetWeight) return;
+    setWhatIfLoading(true);
+    const res = await getWhatIfPrediction({
+      distance_m: distance,
+      target_weight: targetWeight,
+      exercise_name: exercise,
+      raceRecords: rawData.raceRecords,
+      strengthRecords: rawData.strengthRecords,
+    });
+    setWhatIfLoading(false);
+    setWhatIfResult(res.success ? res.data : { error: res.error });
+  };
+
+  const handleAdaptiveSuggestion = async () => {
+    if (!rawData.sessions.length) return;
+    setAdaptiveLoading(true);
+    setAdaptiveError(null);
+    const res = await getAdaptiveWorkoutSuggestion({
+      recentSessions: rawData.sessions,
+      upcomingFocus: adaptiveFocus,
+      raceRecords: rawData.raceRecords,
+    });
+    setAdaptiveLoading(false);
+    if (res.success) {
+      setAdaptiveResult(res.data);
+    } else {
+      setAdaptiveError(res.error);
+    }
   };
 
   if (loading) {
@@ -166,6 +253,100 @@ export default function TrainingDashboard() {
             <Download className="w-4 h-4" />
             Esporta CSV
           </button>
+        </div>
+      </div>
+
+      {/* Coach AI & What-if */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">Insight Coach AI</h2>
+              <p className="text-sm text-gray-400">Commento automatico sugli ultimi allenamenti</p>
+            </div>
+            <button
+              onClick={handleGenerateInsight}
+              disabled={coachLoading || (!rawData.sessions.length && !rawData.raceRecords.length)}
+              className="px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm"
+            >
+              {coachLoading ? 'Generazione...' : 'Genera Insight'}
+            </button>
+          </div>
+          {coachError && <div className="text-sm text-red-400">{coachError}</div>}
+          {coachInsight && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-200">
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Positivo</div>
+                <div className="text-white mt-1">{coachInsight.positive}</div>
+              </div>
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Rischio</div>
+                <div className="text-white mt-1">{coachInsight.warning}</div>
+              </div>
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Focus</div>
+                <div className="text-white mt-1">{coachInsight.advice}</div>
+              </div>
+            </div>
+          )}
+          {!coachInsight && !coachLoading && !coachError && (
+            <div className="text-sm text-gray-500">Genera per ottenere un commento di sintesi.</div>
+          )}
+        </div>
+
+        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+          <h2 className="text-lg font-bold text-white mb-2">What-if Prestazione</h2>
+          <div className="space-y-2 text-sm">
+            <div>
+              <label className="text-gray-400 text-xs">Distanza</label>
+              <select
+                value={whatIfInput.distance || availableDistances[0] || ''}
+                onChange={(e) => setWhatIfInput((p) => ({ ...p, distance: parseInt(e.target.value) }))}
+                className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              >
+                {availableDistances.map((dist) => (
+                  <option key={dist} value={dist}>{dist}m</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-gray-400 text-xs">Esercizio forza</label>
+              <select
+                value={whatIfInput.exercise || strengthExercises[0] || ''}
+                onChange={(e) => setWhatIfInput((p) => ({ ...p, exercise: e.target.value }))}
+                className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              >
+                {strengthExercises.map((ex) => (
+                  <option key={ex} value={ex}>{ex}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-gray-400 text-xs">Peso target (kg)</label>
+              <input
+                type="number"
+                value={whatIfInput.targetWeight}
+                onChange={(e) => setWhatIfInput((p) => ({ ...p, targetWeight: e.target.value }))}
+                className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                placeholder="Es. 150"
+              />
+            </div>
+            <button
+              onClick={handleWhatIf}
+              disabled={whatIfLoading || !availableDistances.length || !strengthExercises.length}
+              className="w-full px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm"
+            >
+              {whatIfLoading ? 'Calcolo...' : 'Stima tempo atteso'}
+            </button>
+            {whatIfResult && (
+              <div className="text-gray-200 text-sm space-y-1 bg-slate-700 border border-slate-600 rounded p-2">
+                {whatIfResult.error && <div className="text-red-400 text-xs">{whatIfResult.error}</div>}
+                {whatIfResult.projection && <div><span className="text-gray-400">Proiezione:</span> {whatIfResult.projection}</div>}
+                {whatIfResult.rationale && <div><span className="text-gray-400">Razionale:</span> {whatIfResult.rationale}</div>}
+                {whatIfResult.caution && <div><span className="text-gray-400">Nota:</span> {whatIfResult.caution}</div>}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -354,6 +535,51 @@ export default function TrainingDashboard() {
           </div>
         </div>
       )}
+
+      {/* Suggerimento Adattivo AI */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-xl font-bold text-white">Adatta la prossima sessione</h2>
+            <p className="text-sm text-gray-400">Analizza stanchezza e tempi recenti</p>
+          </div>
+          <button
+            onClick={handleAdaptiveSuggestion}
+            disabled={adaptiveLoading || !rawData.sessions.length}
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm"
+          >
+            {adaptiveLoading ? 'Analisi...' : 'Suggerisci' }
+          </button>
+        </div>
+        <div className="space-y-2">
+          <textarea
+            value={adaptiveFocus}
+            onChange={(e) => setAdaptiveFocus(e.target.value)}
+            className="w-full h-20 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+            placeholder="Obiettivo o allenamento previsto (opzionale)"
+          />
+          {adaptiveError && <div className="text-sm text-red-400">{adaptiveError}</div>}
+          {adaptiveResult && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm text-gray-200">
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Segnale</div>
+                <div className="text-white mt-1">{adaptiveResult.signal}</div>
+              </div>
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Suggerimento</div>
+                <div className="text-white mt-1">{adaptiveResult.suggestion}</div>
+              </div>
+              <div className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div className="text-gray-400 text-xs uppercase">Recupero</div>
+                <div className="text-white mt-1">{adaptiveResult.recovery}</div>
+              </div>
+            </div>
+          )}
+          {!adaptiveResult && !adaptiveLoading && !adaptiveError && (
+            <div className="text-sm text-gray-500">Premi "Suggerisci" per un check rapido su carico e possibili modifiche.</div>
+          )}
+        </div>
+      </div>
 
       {/* Empty State */}
       {progressionData.length === 0 && (

@@ -53,6 +53,8 @@ export async function getStatsData(startDate = null, endDate = null) {
     const strengthRecords = [];
     const trainingRecords = [];
 
+    const isWarmup = (name = '') => /riscald|warm\s?-?up/i.test(name);
+
     sessions.forEach(session => {
       const groups = session.workout_groups || [];
 
@@ -60,30 +62,45 @@ export async function getStatsData(startDate = null, endDate = null) {
         const sets = group.workout_sets || [];
 
         sets.forEach(set => {
-          // Record corsa (distanza e tempo presenti)
-          if (set.distance_m > 0 && set.time_s > 0) {
-            raceRecords.push({
-              id: set.id,
-              session_id: session.id,
-              date: session.date,
-              created_at: session.date,
-              distance_m: set.distance_m,
-              time_s: set.time_s,
-              is_personal_best: set.details?.is_personal_best || false,
-              type: 'race',
-            });
+          const warmup = isWarmup(group?.name) || isWarmup(set?.exercise_name);
+          const isTestFlag = Boolean(
+            set?.details?.is_test ||
+            set?.details?.is_pb_candidate ||
+            session.type === 'gara' ||
+            session.type === 'test'
+          );
+          const highIntensity = typeof set?.details?.intensity === 'number' ? set.details.intensity >= 7 : false;
+
+          // Record corsa: includi solo set cronometrati non marcati come riscaldamento
+          if (set.distance_m > 0 && set.time_s > 0 && !warmup) {
+            if (isTestFlag || highIntensity || set.category === 'sprint') {
+              raceRecords.push({
+                id: set.id,
+                session_id: session.id,
+                date: session.date,
+                created_at: session.date,
+                distance_m: set.distance_m,
+                time_s: set.time_s,
+                is_personal_best: set.details?.is_personal_best || false,
+                is_test: isTestFlag,
+                type: 'race',
+              });
+            }
           }
 
-          // Record forza (peso > 0)
-          if (set.weight_kg > 0) {
+          // Record forza: includi set con peso, ignora warmup leggero
+          if (set.weight_kg > 0 && !warmup) {
             strengthRecords.push({
               id: set.id,
               session_id: session.id,
               date: session.date,
+              created_at: session.date,
               exercise_name: set.exercise_name,
               weight_kg: set.weight_kg,
               reps: set.reps,
+              sets: set.sets,
               is_personal_best: set.details?.is_personal_best || false,
+              is_test: isTestFlag,
             });
           }
         });
