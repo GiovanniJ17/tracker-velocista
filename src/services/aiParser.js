@@ -146,10 +146,26 @@ function dateForWeekday(weekday, reference = new Date()) {
   return formatLocalDate(result);
 }
 
-function findDayChunks(text) {
-  // Match giorni senza richiedere ^ o \n (più flessibile)
+function parseExplicitDate(str, reference = new Date()) {
+  // Supporta formati tipo 15/01/2026 o 15-01-26
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+  if (!m) return null;
+
+  const day = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10) - 1; // JS months 0-based
+  const yearRaw = m[3];
+  let year = yearRaw ? parseInt(yearRaw, 10) : reference.getFullYear();
+  if (year < 100) year += 2000; // normalizza anni a due cifre
+
+  const d = new Date(year, month, day);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatLocalDate(d);
+}
+
+function findDayChunks(text, reference = new Date()) {
+  // Match giorni senza richiedere : o parentesi (più tollerante)
   const dayNames = ['lunedì', 'lunedi', 'martedì', 'martedi', 'mercoledì', 'mercoledi', 'giovedì', 'giovedi', 'venerdì', 'venerdi', 'sabato', 'domenica'];
-  const pattern = new RegExp(`(${dayNames.join('|')})\\s*[:(]`, 'gi');
+  const pattern = new RegExp(`(${dayNames.join('|')})`, 'gi');
   
   const matches = [];
   let match;
@@ -168,9 +184,9 @@ function findDayChunks(text) {
     const current = matches[i];
     const next = matches[i + 1];
     
-    // Trova l'inizio del testo dopo il giorno (dopo la parentesi/punteggiatura)
+    // Trova l'inizio del testo dopo il giorno (spazi, : , - , parentesi)
     let textStart = current.index + current.keyword.length;
-    while (textStart < text.length && /[\s:(\-]/.test(text[textStart])) {
+    while (textStart < text.length && /[\s:()\-]/.test(text[textStart])) {
       textStart++;
     }
     
@@ -178,11 +194,17 @@ function findDayChunks(text) {
     const end = next ? next.index : text.length;
     const raw = text.slice(start, end).trim();
     const cleaned = raw.replace(/^[:\-\s]+/, '').trim();
+
+    // Se il testo dopo il giorno inizia con una data esplicita, estraila
+    const dateMatch = cleaned.match(/^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/);
+    const explicitDate = dateMatch ? parseExplicitDate(dateMatch[1], reference) : null;
+    const textWithoutDate = dateMatch ? cleaned.slice(dateMatch[1].length).trim() : cleaned;
     
     chunks.push({
       weekday: current.keyword.toLowerCase(),
       heading: current.keyword.trim(),
-      text: cleaned || raw
+      text: textWithoutDate || cleaned || raw,
+      explicitDate
     });
   }
   
@@ -423,13 +445,13 @@ export async function parseTrainingWithAI(trainingText, referenceDate = new Date
   const trimmed = trainingText?.trim();
   if (!trimmed) throw new Error('Testo allenamento vuoto');
   
-  const chunks = findDayChunks(trimmed);
+  const chunks = findDayChunks(trimmed, referenceDate);
 
   // Caso multi-giorno
   if (chunks.length > 0) {
     const sessions = [];
     for (const chunk of chunks) {
-      const targetDate = dateForWeekday(chunk.weekday, referenceDate);
+      const targetDate = chunk.explicitDate || dateForWeekday(chunk.weekday, referenceDate);
       const parsed = await parseSingleDay({
         text: chunk.text,
         date: targetDate,

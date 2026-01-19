@@ -1,8 +1,8 @@
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { Trash2, Edit3, Dumbbell, MapPin, Zap } from 'lucide-react';
+import { Trash2, MapPin } from 'lucide-react';
 
-export default function SessionDetail({ date, sessions, onEdit, onDelete, loading }) {
+export default function SessionDetail({ date, sessions, onDelete, loading }) {
   const getTypeColor = (type) => {
     const colors = {
       pista: 'bg-blue-500',
@@ -26,6 +26,11 @@ export default function SessionDetail({ date, sessions, onEdit, onDelete, loadin
     scarico: 'Scarico',
     recupero: 'Recupero',
     altro: 'Altro',
+  };
+
+  const buildDisplayTitle = (session) => {
+    const firstNoteLine = session.notes?.split('\n')?.[0]?.trim();
+    return firstNoteLine || '';
   };
 
   if (loading) {
@@ -59,19 +64,11 @@ export default function SessionDetail({ date, sessions, onEdit, onDelete, loadin
                   {typeLabels[session.type] || session.type}
                 </div>
                 <div>
-                  <h4 className="text-lg font-bold text-white">{session.title || 'Sessione'}</h4>
-                  <p className="text-sm text-gray-400">{format(new Date(session.date), 'HH:mm', { locale: it })}</p>
+                  <h4 className="text-lg font-bold text-white">{buildDisplayTitle(session)}</h4>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={() => onEdit(session)}
-                  className="p-2 hover:bg-slate-700 rounded-lg transition text-blue-400 hover:text-blue-300"
-                  title="Modifica"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
                 <button
                   onClick={() => onDelete(session.id)}
                   className="p-2 hover:bg-slate-700 rounded-lg transition text-red-400 hover:text-red-300"
@@ -83,7 +80,7 @@ export default function SessionDetail({ date, sessions, onEdit, onDelete, loadin
             </div>
 
             {/* Metadata */}
-            <div className="grid grid-cols-3 gap-4 mb-4 py-4 border-y border-slate-700">
+            <div className="grid grid-cols-3 gap-4 mb-4 pb-4 border-b border-slate-700">
               {session.rpe !== null && (
                 <div>
                   <p className="text-xs text-gray-500 uppercase">RPE</p>
@@ -115,10 +112,42 @@ export default function SessionDetail({ date, sessions, onEdit, onDelete, loadin
               </div>
             )}
 
-            {/* Placeholder per esercizi - da caricare con SessionDetail completo */}
-            <div className="text-xs text-gray-500">
-              <p>📋 Esercizi non ancora caricati nel dettaglio</p>
-            </div>
+            {/* Gruppi ed esercizi */}
+            {session.groups && session.groups.length > 0 ? (
+              <div className="space-y-3">
+                {session.groups.map((group) => (
+                  <div key={group.id} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-white">{group.name || 'Gruppo'}</p>
+                      {group.notes && <p className="text-xs text-gray-400">{group.notes}</p>}
+                    </div>
+                    {group.sets && group.sets.length > 0 ? (
+                      <div className="space-y-2">
+                        {group.sets.map((set) => (
+                          <div
+                            key={set.id}
+                            className="flex flex-wrap items-center gap-3 text-sm text-gray-200"
+                          >
+                            <span className="font-semibold">{set.exercise_name}</span>
+                            {set.sets && <span className="text-gray-400">{set.sets}x</span>}
+                            {set.reps && <span className="text-gray-400">{set.reps} rep</span>}
+                            {set.weight_kg && <span className="text-gray-400">{set.weight_kg} kg</span>}
+                            {set.distance_m && <span className="text-gray-400">{set.distance_m} m</span>}
+                            {set.time_s && <span className="text-gray-400">{set.time_s}s</span>}
+                            {set.recovery_s && <span className="text-gray-500">rec {set.recovery_s}s</span>}
+                            {set.notes && <span className="text-gray-300">• {set.notes}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">Nessun esercizio registrato.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-gray-500">Esercizi non ancora caricati nel dettaglio</div>
+            )}
           </div>
         ))
       )}

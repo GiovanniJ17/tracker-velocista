@@ -3,8 +3,7 @@ import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 import SessionCalendar from './SessionCalendar';
 import SessionDetail from './SessionDetail';
-import SessionEditor from './SessionEditor';
-import { getSessionsForMonth, getSessionsByDate, deleteTrainingSession } from '../../services/trainingService';
+import { getSessionsForMonth, getSessionsByDate, getSessionDetails, deleteTrainingSession } from '../../services/trainingService';
 
 export default function SessionHistory() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -12,8 +11,6 @@ export default function SessionHistory() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSessions, setSelectedSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editingSession, setEditingSession] = useState(null);
-  const [showEditor, setShowEditor] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   useEffect(() => {
@@ -32,15 +29,24 @@ export default function SessionHistory() {
   const handleDateClick = async (date) => {
     setSelectedDate(date);
     const dateStr = format(date, 'yyyy-MM-dd');
-    const result = await getSessionsByDate(dateStr);
-    if (result.success) {
-      setSelectedSessions(result.data);
+    try {
+      const result = await getSessionsByDate(dateStr);
+      if (result.success) {
+        const detailed = await Promise.all(
+          result.data.map(async (session) => {
+            const detailRes = await getSessionDetails(session.id);
+            return detailRes.success ? detailRes.data : session;
+          })
+        );
+        setSelectedSessions(detailed);
+      } else {
+        setSelectedSessions([]);
+        console.warn('Impossibile caricare le sessioni per la data', dateStr, result.error);
+      }
+    } catch (err) {
+      console.warn('Errore nel caricamento dettagli data', err);
+      setSelectedSessions([]);
     }
-  };
-
-  const handleEditSession = (session) => {
-    setEditingSession(session);
-    setShowEditor(true);
   };
 
   const handleDeleteClick = (sessionId) => {
@@ -67,8 +73,6 @@ export default function SessionHistory() {
     if (selectedDate) {
       await handleDateClick(selectedDate);
     }
-    setShowEditor(false);
-    setEditingSession(null);
   };
 
   const prevMonth = () => {
@@ -101,7 +105,6 @@ export default function SessionHistory() {
             <SessionDetail
               date={selectedDate}
               sessions={selectedSessions}
-              onEdit={handleEditSession}
               onDelete={handleDeleteClick}
               loading={loading}
             />
@@ -114,18 +117,6 @@ export default function SessionHistory() {
           )}
         </div>
       </div>
-
-      {/* Editor Modale */}
-      {showEditor && editingSession && (
-        <SessionEditor
-          session={editingSession}
-          onClose={() => {
-            setShowEditor(false);
-            setEditingSession(null);
-          }}
-          onSave={handleSaveEditor}
-        />
-      )}
 
       {/* Conferma Eliminazione */}
       {deleteConfirm && (
