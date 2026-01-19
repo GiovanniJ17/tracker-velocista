@@ -243,7 +243,7 @@ ${jsonTemplate}
 
 Return ONLY valid JSON. Do not include markdown or explanations.`;
   
-  // ✅ USA IL WORKER PROXY (chiave API nascosta lato server, sicuro)
+  // Usa il worker proxy per nascondere la chiave API (SICURO)
   let workerUrl = 'http://localhost:5000'; // Local dev
   
   if (import.meta.env.MODE === 'production') {
@@ -251,13 +251,7 @@ Return ONLY valid JSON. Do not include markdown or explanations.`;
     workerUrl = import.meta.env.VITE_WORKER_URL || 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
   }
   
-  // Prepara headers con chiave custom se fornita (dev mode)
   const headers = { 'Content-Type': 'application/json' };
-  if (devApiKey && devApiKey.trim().length > 10) {
-    headers['X-Custom-API-Key'] = devApiKey.trim();
-    console.log('[AI Parser] Using custom API key via dev mode');
-  }
-  
   const requestBody = buildProxyRequest('gemini', userPrompt);
   console.log('[AI Parser] Calling worker at:', workerUrl);
   
@@ -424,9 +418,8 @@ Return ONLY valid JSON. Do not include markdown or explanations.`;
  * Interpreta testo di allenamento. Supporta più giorni nello stesso input.
  * - Se trova intestazioni con giorni (lunedì/martedì...), crea una sessione per ciascuna.
  * - Se non trova giorni, considera una sola sessione datata oggi.
- * @param {string|null} devApiKey - Optional dev API key to override env key
  */
-export async function parseTrainingWithAI(trainingText, referenceDate = new Date(), devApiKey = null) {
+export async function parseTrainingWithAI(trainingText, referenceDate = new Date()) {
   const trimmed = trainingText?.trim();
   if (!trimmed) throw new Error('Testo allenamento vuoto');
   
@@ -440,8 +433,7 @@ export async function parseTrainingWithAI(trainingText, referenceDate = new Date
       const parsed = await parseSingleDay({
         text: chunk.text,
         date: targetDate,
-        titleHint: chunk.heading,
-        devApiKey
+        titleHint: chunk.heading
       });
       sessions.push(parsed);
     }
@@ -450,7 +442,7 @@ export async function parseTrainingWithAI(trainingText, referenceDate = new Date
 
   // Caso singolo giorno → data = oggi/reference
   const singleDate = formatLocalDate(new Date(referenceDate));
-  const parsed = await parseSingleDay({ text: trimmed, date: singleDate, titleHint: null, devApiKey });
+  const parsed = await parseSingleDay({ text: trimmed, date: singleDate, titleHint: null });
   return { sessions: [parsed] };
 }
 

@@ -11,11 +11,11 @@ function friendlyErrorMessage(message) {
   }
   
   if (text.includes('quota') || text.includes('exceeded')) {
-    return 'Quota Gemini esaurita: genera una nuova API key su Google AI Studio (Modalità Sviluppo).';
+    return 'Quota Gemini esaurita. Contatta l\'amministratore.';
   }
   
   if (text.includes('api key') || text.includes('key was reported as leaked')) {
-    return 'API key Gemini non valida o revocata: aggiorna la chiave nella Modalità Sviluppo.';
+    return 'Errore di autenticazione. Contatta l\'amministratore.';
   }
 
   return message || 'Errore sconosciuto';
@@ -27,8 +27,6 @@ export default function AITrainingInput() {
   const [parsedData, setParsedData] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const [devApiKey, setDevApiKey] = useState(''); // Dev API key opzionale
-  const [showDevSettings, setShowDevSettings] = useState(false); // Toggle per impostazioni dev
 
   const handleParse = async () => {
     if (!trainingText.trim()) {
@@ -42,8 +40,7 @@ export default function AITrainingInput() {
     setSuccess(false);
 
     try {
-      // Passa la chiave di sviluppo se presente
-      const parsed = await parseTrainingWithAI(trainingText, new Date(), devApiKey || null);
+      const parsed = await parseTrainingWithAI(trainingText, new Date());
       
       // Valida i dati
       const validation = validateParsedData(parsed);
@@ -120,44 +117,6 @@ export default function AITrainingInput() {
             <p className="mt-2 text-xs text-gray-400">
               Scrivi liberamente: distanze, tempi, serie, recuperi, sensazioni...
             </p>
-          </div>
-
-          {/* Dev Settings - API Key Override */}
-          <div className="border-t border-slate-700 pt-4">
-            <button
-              onClick={() => setShowDevSettings(!showDevSettings)}
-              className="text-xs text-gray-400 hover:text-gray-300 flex items-center gap-2 mb-2"
-            >
-              <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-              Modalità Sviluppo - API Key Temporanea
-            </button>
-            
-            {showDevSettings && (
-              <div className="bg-slate-900/50 rounded-lg p-4 space-y-2">
-                <label className="block text-xs font-medium text-gray-400">
-                  Chiave API Google Gemini (opzionale - sovrascrive quella di default)
-                </label>
-                <input
-                  type="text"
-                  value={devApiKey}
-                  onChange={(e) => setDevApiKey(e.target.value)}
-                  placeholder="AIza..."
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm placeholder-gray-600 focus:ring-2 focus:ring-yellow-500 focus:border-transparent font-mono"
-                />
-                <p className="text-xs text-gray-500">
-                  💡 Quando la quota finisce, genera una nuova chiave su{' '}
-                  <a 
-                    href="https://aistudio.google.com/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-primary-400 hover:underline"
-                  >
-                    Google AI Studio
-                  </a>
-                  {' '}e incollala qui. Non serve riavviare nulla!
-                </p>
-              </div>
-            )}
           </div>
 
           {/* Bottone Parse */}
