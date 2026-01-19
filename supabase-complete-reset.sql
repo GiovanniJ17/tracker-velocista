@@ -16,10 +16,19 @@
 -- =====================================================
 
 -- =====================================================
--- STEP 1: DROP ALL EXISTING TABLES (in dependency order)
+-- STEP 1: DROP ALL EXISTING OBJECTS (triggers, functions, tables)
 -- =====================================================
 
--- Drop dependent tables first
+-- Drop triggers first (before dropping functions or tables)
+DROP TRIGGER IF EXISTS training_sessions_after_insert ON public.training_sessions;
+DROP TRIGGER IF EXISTS training_sessions_after_update ON public.training_sessions;
+DROP TRIGGER IF EXISTS workout_sets_after_insert ON public.workout_sets;
+
+-- Drop RPC functions
+DROP FUNCTION IF EXISTS public.insert_full_training_session(date, text, text, text, integer, text, text, jsonb) CASCADE;
+DROP FUNCTION IF EXISTS public.update_monthly_stats() CASCADE;
+
+-- Drop tables in dependency order (children first, then parents)
 DROP TABLE IF EXISTS public.workout_sets CASCADE;
 DROP TABLE IF EXISTS public.workout_groups CASCADE;
 DROP TABLE IF EXISTS public.race_records CASCADE;
@@ -29,13 +38,6 @@ DROP TABLE IF EXISTS public.injury_history CASCADE;
 DROP TABLE IF EXISTS public.monthly_stats CASCADE;
 DROP TABLE IF EXISTS public.training_sessions CASCADE;
 DROP TABLE IF EXISTS public.athlete_profile CASCADE;
-
--- Drop RPC functions and triggers
-DROP FUNCTION IF EXISTS public.insert_full_training_session(date, text, text, text, integer, text, text, jsonb) CASCADE;
-DROP FUNCTION IF EXISTS public.update_monthly_stats() CASCADE;
-DROP TRIGGER IF EXISTS training_sessions_after_insert ON public.training_sessions CASCADE;
-DROP TRIGGER IF EXISTS training_sessions_after_update ON public.training_sessions CASCADE;
-DROP TRIGGER IF EXISTS workout_sets_after_insert ON public.workout_sets CASCADE;
 
 -- =====================================================
 -- STEP 2: CREATE TABLES (in dependency order)
