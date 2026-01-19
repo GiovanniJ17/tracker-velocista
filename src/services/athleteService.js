@@ -280,61 +280,128 @@ export async function resolveInjury(injuryId, endDate) {
  */
 export async function getPersonalBests() {
   try {
-    // NOTA: Tabelle obsolete rimosse nel nuovo schema
-    // race_records, training_records, strength_records non esistono più
-    // I PB sono ora tracciati in workout_sets
-    const [sessionsResult] = await Promise.all([
-      supabase.from('training_sessions').select('id, date'),
-    ]);
+    // Nuova implementazione: recupera i PB reali da workout_sets
+    return await getPersonalBestsFromWorkoutSets();
+  } catch (error) {
+    console.error('Errore nel recupero PB personali:', error);
+    return { success: false, error: error.message };
+  }
+}
 
-    if (sessionsResult.error) {
-      console.error('[athleteService] Query error:', { 
-        sessionsResult: sessionsResult.error 
-      });
-      throw sessionsResult.error;
-    }
+/**
+ * Recupera i Personal Best reali analizzando workout_sets
+ */
+export async function getPersonalBestsFromWorkoutSets() {
+  try {
+    // Recupera tutti i workout_sets con categoria sprint/jump/lift
+    const { data: workoutSets, error } = await supabase
+      .from('workout_sets')
+      .select(`
+        *,
+        workout_groups!inner(
+          session_id,
+          training_sessions!inner(
+            id,
+            date,
+            type
+          )
+        )
+      `)
+      .in('category', ['sprint', 'jump', 'lift'])
+      .order('created_at', { ascending: false });
 
-    // Placeholder per compatibilità - tabelle obsolete rimosse
-    const raceResult = { data: [] };
-    const trainingResult = { data: [] };
-    const strengthResult = { data: [] };
+    if (error) throw error;
 
-    // Crea un mappa di sessioni per lookup veloce
-    const sessionsMap = {};
-    if (sessionsResult.data) {
-      sessionsResult.data.forEach(session => {
-        sessionsMap[session.id] = session;
-      });
-    }
+    // Raggruppa per categoria e trova i migliori
+    const sprintPBs = [];
+    const jumpPBs = [];
+    const strengthPBs = [];
 
-    // Arricchisci i record con i dati della sessione
-    const enrichedRaceRecords = raceResult.data.map(record => ({
-      ...record,
-      training_sessions: sessionsMap[record.session_id] ? [sessionsMap[record.session_id]] : []
+    // Traccia i migliori per ogni combinazione di esercizio/distanza
+    const bestSprints = {};
+    const bestJumps = {};
+    const bestLifts = {};
+
+    workoutSets?.forEach(set => {
+      const session = set.workout_groups?.training_sessions;
+      
+      if (set.category === 'sprint' && set.distance_m && set.time_s) {
+        const key = `${set.exercise_name}_${set.distance_m}m`;
+        if (!bestSprints[key] || set.time_s < bestSprints[key].time_s) {
+          bestSprints[key] = {
+            ...set,
+            session_date: session?.date,
+            session_type: session?.type,
+          };
+        }
+      } else if (set.category === 'jump' && set.distance_m) {
+        const key = set.exercise_name;
+        if (!bestJumps[key] || set.distance_m > bestJumps[key].distance_m) {
+          bestJumps[key] = {
+            ...set,
+            session_date: session?.date,
+            session_type: session?.type,
+          };
+        }
+      } else if (set.category === 'lift' && set.weight_kg) {
+        const key = set.exercise_name;
+        if (!bestLifts[key] || set.weight_kg > bestLifts[key].weight_kg) {
+          bestLifts[key] = {
+            ...set,
+            session_date: session?.date,
+            session_type: session?.type,
+          };
+        }
+      }
+    });
+
+    // Converti in array per compatibilità con UI esistente
+    const raceRecords = Object.values(bestSprints).map(pb => ({
+      id: pb.id,
+      distance_m: pb.distance_m,
+      time_s: pb.time_s,
+      exercise_name: pb.exercise_name,
+      notes: pb.notes,
+      is_personal_best: true,
+      training_sessions: [{ date: pb.session_date, type: pb.session_type }]
     }));
 
-    const enrichedTrainingRecords = trainingResult.data.map(record => ({
-      ...record,
-      training_sessions: sessionsMap[record.session_id] ? [sessionsMap[record.session_id]] : []
+    const trainingRecords = Object.values(bestJumps).map(pb => ({
+      id: pb.id,
+      exercise_name: pb.exercise_name,
+      exercise_type: 'jump',
+      performance_value: pb.distance_m,
+      performance_unit: 'meters',
+      notes: pb.notes,
+      is_personal_best: true,
+      training_sessions: [{ date: pb.session_date, type: pb.session_type }]
     }));
 
-    const enrichedStrengthRecords = strengthResult.data.map(record => ({
-      ...record,
-      training_sessions: sessionsMap[record.session_id] ? [sessionsMap[record.session_id]] : []
+    const strengthRecords = Object.values(bestLifts).map(pb => ({
+      id: pb.id,
+      exercise_name: pb.exercise_name,
+      category: 'lift',
+      weight_kg: pb.weight_kg,
+      reps: pb.reps || 1,
+      notes: pb.notes,
+      is_personal_best: true,
+      training_sessions: [{ date: pb.session_date, type: pb.session_type }]
     }));
 
-    console.log('[athleteService] Race records caricati:', enrichedRaceRecords);
-    
+    console.log('[athleteService] PB Sprint trovati:', raceRecords);
+    console.log('[athleteService] PB Salti trovati:', trainingRecords);
+    console.log('[athleteService] PB Forza trovati:', strengthRecords);
+
     return {
       success: true,
       data: {
-        raceRecords: enrichedRaceRecords,
-        trainingRecords: enrichedTrainingRecords,
-        strengthRecords: enrichedStrengthRecords,
+        raceRecords,
+        trainingRecords,
+        strengthRecords,
       },
     };
   } catch (error) {
-    console.error('Errore nel recupero PB personali:', error);
+    console.error('Errore nel recupero PB da workout_sets:', error);
     return { success: false, error: error.message };
   }
 }
