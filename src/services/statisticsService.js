@@ -12,13 +12,12 @@ const supabase = createClient(
 );
 
 /**
- * Recupera tutte le sessioni e record per il periodo specificato
+ * Recupera tutte le sessioni e i record (estratti dai workout_sets) per il periodo indicato
  */
 export async function getStatsData(startDate = null, endDate = null) {
   try {
-    // Default: ultimi 3 mesi
     const rawEnd = endDate || new Date();
-    const end = new Date(rawEnd); // Solo fino a oggi (niente futuro)
+    const end = new Date(rawEnd);
     const start = startDate || new Date(rawEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     console.log('[statisticsService] range', {
@@ -27,45 +26,75 @@ export async function getStatsData(startDate = null, endDate = null) {
       rawEnd: rawEnd.toISOString(),
     });
 
-    // Prendi tutti i dati e filtra lato client per evitare problemi di join/alias
-    // NOTA: race_records, training_records, strength_records sono state eliminate nel nuovo schema
-    const [sessionsRes, injuriesRes] = await Promise.all([
-      supabase.from('training_sessions').select('*').order('date', { ascending: true }),
-      supabase.from('injury_history').select('*'),
-    ]);
+    const { data: sessionsData, error: sessionsError } = await supabase
+      .from('training_sessions')
+      .select(`
+        *,
+        workout_groups (
+          *,
+          workout_sets (*)
+        )
+      `)
+      .gte('date', start.toISOString())
+      .lte('date', end.toISOString())
+      .order('date', { ascending: true });
 
-    if (sessionsRes.error || injuriesRes.error) {
-      console.error('[statisticsService] Query error', { sessionsRes, injuriesRes });
-      throw sessionsRes.error || injuriesRes.error;
+    const { data: injuriesData, error: injuriesError } = await supabase
+      .from('injury_history')
+      .select('*');
+
+    if (sessionsError || injuriesError) {
+      console.error('[statisticsService] Query error', { sessionsError, injuriesError });
+      throw sessionsError || injuriesError;
     }
 
-    // Tabelle obsolete rimosse - i dati sono ora in workout_sets
-    const raceRes = { data: [] };
-    const trainingRes = { data: [] };
-    const strengthRes = { data: [] };
+    const sessions = sessionsData || [];
+    const raceRecords = [];
+    const strengthRecords = [];
+    const trainingRecords = [];
 
-    const inRange = (dateStr) => {
-      if (!dateStr) return false;
-      const d = new Date(dateStr);
-      return d >= start && d <= end;
-    };
+    sessions.forEach(session => {
+      const groups = session.workout_groups || [];
 
-    const sessions = (sessionsRes.data || []).filter(s => inRange(s.date));
-    const getLinkedDate = (rec) => rec?.training_sessions?.[0]?.date || rec?.training_sessions?.date || rec?.created_at;
-    const raceRecords = (raceRes.data || []).filter(r => inRange(getLinkedDate(r)));
-    const trainingRecords = (trainingRes.data || []).filter(r => inRange(getLinkedDate(r)));
-    const strengthRecords = (strengthRes.data || []).filter(r => inRange(getLinkedDate(r)));
-    const injuries = injuriesRes.data || [];
+      groups.forEach(group => {
+        const sets = group.workout_sets || [];
+
+        sets.forEach(set => {
+          // Record corsa (distanza e tempo presenti)
+          if (set.distance_m > 0 && set.time_s > 0) {
+            raceRecords.push({
+              id: set.id,
+              session_id: session.id,
+              date: session.date,
+              created_at: session.date,
+              distance_m: set.distance_m,
+              time_s: set.time_s,
+              is_personal_best: set.details?.is_personal_best || false,
+              type: 'race',
+            });
+          }
+
+          // Record forza (peso > 0)
+          if (set.weight_kg > 0) {
+            strengthRecords.push({
+              id: set.id,
+              session_id: session.id,
+              date: session.date,
+              exercise_name: set.exercise_name,
+              weight_kg: set.weight_kg,
+              reps: set.reps,
+              is_personal_best: set.details?.is_personal_best || false,
+            });
+          }
+        });
+      });
+    });
 
     console.log('[statisticsService] counts', {
       sessions: sessions.length,
       raceRecords: raceRecords.length,
       strengthRecords: strengthRecords.length,
-      injuries: injuries.length,
-      sessionIds: sessions.map(s => ({ id: s.id, date: s.date })),
-      raceIds: raceRecords.map(r => ({ id: r.id, session: r.session_id, date: getLinkedDate(r) })),
-      strengthIds: strengthRecords.map(r => ({ id: r.id, session: r.session_id, date: getLinkedDate(r) })),
-      injuryIds: injuries.map(i => ({ id: i.id, start: i.start_date, end: i.end_date })),
+      injuries: (injuriesData || []).length,
     });
 
     return {
@@ -75,7 +104,7 @@ export async function getStatsData(startDate = null, endDate = null) {
         raceRecords,
         trainingRecords,
         strengthRecords,
-        injuries,
+        injuries: injuriesData || [],
       },
     };
   } catch (error) {
@@ -162,13 +191,13 @@ export function getProgressionChartData(raceRecords) {
 
   Object.entries(recordsByDistance).forEach(([distance, records]) => {
     const sortedRecords = records.sort((a, b) => {
-      const dateA = a.training_sessions?.[0]?.date || a.created_at;
-      const dateB = b.training_sessions?.[0]?.date || b.created_at;
+      const dateA = a.date || a.created_at;
+      const dateB = b.date || b.created_at;
       return new Date(dateA) - new Date(dateB);
     });
 
     sortedRecords.forEach((record, idx) => {
-      const date = record.training_sessions?.[0]?.date || record.created_at;
+      const date = record.date || record.created_at;
       const key = `${distance}m`;
 
       let item = chartData.find(d => d.date === date);
@@ -304,7 +333,7 @@ export function getInjuryTimeline(injuries, raceRecords) {
     .map(inj => {
       // Conta record durante l'infortunio
       const affectedRecords = raceRecords.filter(r => {
-        const rDate = new Date(r.created_at);
+        const rDate = new Date(r.date || r.created_at);
         const injStart = new Date(inj.start_date);
         const injEnd = inj.end_date ? new Date(inj.end_date) : new Date();
         return rDate >= injStart && rDate <= injEnd;
@@ -332,7 +361,7 @@ export function getMonthlyMetrics(sessions, raceRecords) {
   const monthlyData = {};
 
   raceRecords.forEach(record => {
-    const date = new Date(record.created_at);
+    const date = new Date(record.date || record.created_at);
     const monthKey = format(date, 'yyyy-MM');
 
     if (!monthlyData[monthKey]) {
