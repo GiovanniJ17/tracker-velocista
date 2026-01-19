@@ -237,14 +237,26 @@ CREATE OR REPLACE FUNCTION update_monthly_stats()
 RETURNS TRIGGER AS $$
 DECLARE
   v_year_month DATE;
+  v_session_date DATE;
   v_total_distance NUMERIC;
   v_total_time NUMERIC;
   v_total_sets INTEGER;
   v_avg_rpe NUMERIC;
   v_session_count INTEGER;
 BEGIN
+  -- Get the session date depending on which table triggered this
+  IF TG_TABLE_NAME = 'training_sessions' THEN
+    v_session_date := NEW.date;
+  ELSIF TG_TABLE_NAME = 'workout_sets' THEN
+    -- Get the session date by joining back through workout_groups
+    SELECT ts.date INTO v_session_date
+    FROM training_sessions ts
+    JOIN workout_groups wg ON ts.id = wg.session_id
+    WHERE wg.id = NEW.group_id;
+  END IF;
+
   -- Get the first day of the month for the session
-  v_year_month := DATE_TRUNC('month', NEW.date)::DATE;
+  v_year_month := DATE_TRUNC('month', v_session_date)::DATE;
 
   -- Calculate aggregates for the month
   SELECT
