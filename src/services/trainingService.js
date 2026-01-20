@@ -104,6 +104,7 @@ async function saveExtractedRecords(sessionId, sessionDate, personalBests = [], 
             .from('strength_records')
             .select('weight_kg')
             .eq('category', pb.category)
+            .eq('exercise_name', pb.exercise_name)
             .order('weight_kg', { ascending: false })
             .limit(1);
 

@@ -973,9 +973,23 @@ function isPlausibleSprint(distance, time) {
   return time >= minPlausible;
 }
 
+function mapStrengthCategory(exerciseName = '') {
+  const n = (exerciseName || '').toLowerCase();
+  if (n.includes('squat')) return 'squat';
+  if (n.includes('panca') || n.includes('bench')) return 'bench';
+  if (n.includes('stacco') || n.includes('deadlift')) return 'deadlift';
+  if (n.includes('clean') || n.includes('girata')) return 'clean';
+  if (n.includes('jerk')) return 'jerk';
+  if (n.includes('press')) return 'press';
+  if (n.includes('traz') || n.includes('pull')) return 'pull';
+  return 'lift';
+}
+
 export function derivePBsFromSessions(sessions) {
   const pbs = [];
   if (!sessions || sessions.length === 0) return pbs;
+
+  const bestStrength = {};
 
   sessions.forEach(session => {
     const sessionType = (session.session?.type || '').toLowerCase();
@@ -985,24 +999,44 @@ export function derivePBsFromSessions(sessions) {
       (group.sets || []).forEach(set => {
         const distance = set.distance_m || null;
         const time = set.time_s || null;
-        if (!distance || !time) return;
-        if (!isPlausibleSprint(distance, time)) return;
-
-        if (isCompetition) {
-          const duplicate = pbs.some(pb => pb.type === 'race' && pb.distance_m === distance && Math.abs(pb.time_s - time) < 0.05);
-          if (!duplicate) {
-            pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true, derived: true });
+        if (distance && time && isPlausibleSprint(distance, time)) {
+          if (isCompetition) {
+            const duplicate = pbs.some(pb => pb.type === 'race' && pb.distance_m === distance && Math.abs(pb.time_s - time) < 0.05);
+            if (!duplicate) {
+              pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true, derived: true });
+            }
+          } else {
+            const exerciseName = `Sprint ${distance}m`;
+            const duplicate = pbs.some(pb => pb.type === 'training' && pb.exercise_name === exerciseName && Math.abs(pb.performance_value - time) < 0.05);
+            if (!duplicate) {
+              pbs.push({ type: 'training', exercise_name: exerciseName, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true, derived: true });
+            }
           }
-        } else {
-          const exerciseName = `Sprint ${distance}m`;
-          const duplicate = pbs.some(pb => pb.type === 'training' && pb.exercise_name === exerciseName && Math.abs(pb.performance_value - time) < 0.05);
-          if (!duplicate) {
-            pbs.push({ type: 'training', exercise_name: exerciseName, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true, derived: true });
+        }
+
+        if (set.weight_kg) {
+          const exerciseName = set.exercise_name || 'Forza';
+          const key = exerciseName.toLowerCase();
+          const category = mapStrengthCategory(exerciseName);
+          const current = bestStrength[key];
+          if (!current || set.weight_kg > current.weight_kg) {
+            bestStrength[key] = {
+              type: 'strength',
+              exercise_name: exerciseName,
+              category,
+              weight_kg: set.weight_kg,
+              reps: set.reps || 1,
+              is_personal_best: true,
+              derived: true
+            };
           }
         }
       });
     });
   });
+
+  // Aggiungi i migliori massimali per esercizio
+  Object.values(bestStrength).forEach(pb => pbs.push(pb));
 
   return pbs;
 }
@@ -1028,10 +1062,11 @@ export function mergePersonalBests(textPBs, derivedPBs) {
         Math.abs(m.performance_value - pb.performance_value) < 0.05
       );
     } else if (pb.type === 'strength') {
-      // Strength PB: confronta category e weight_kg
+      // Strength PB: confronta exercise_name + category + weight_kg
       duplicate = merged.some(m => 
         m.type === 'strength' && 
-        m.category === pb.category && 
+        m.category === pb.category &&
+        m.exercise_name === pb.exercise_name && 
         Math.abs(m.weight_kg - pb.weight_kg) < 0.5
       );
     }
