@@ -41,7 +41,10 @@ CRITICAL RULES:
    * If weight unit is missing and not obvious → Ask
    * If exercise name is vague ("leg press" could be multiple variations) → Ask or use best judgment
    * CRITICAL: Do NOT default to minutes or seconds. If you cannot be 100% certain from context (e.g., previous sets in the same group with explicit units), you MUST ask.
-   * Format questions_for_user as: [{"field": "recovery_s", "question": "Il recupero di 3 è in secondi o minuti?", "options": ["3 secondi", "3 minuti"]}]
+   * ⭐ CRITICAL: Format questions_for_user with OPTIONS as objects (NOT strings):
+     [{"field": "recovery_s", "question": "Il recupero di 3 è in secondi o minuti?", "options": [{"label": "3 secondi", "value": 3}, {"label": "3 minuti", "value": 180}]}]
+   * Value must be the EXACT numeric/string that will be stored in the database
+   * Example for weight unit ambiguity: [{"field": "weight_kg", "question": "Il peso è 100 libbre o 100 kg?", "options": [{"label": "100 kg", "value": 100}, {"label": "100 libbre (~45 kg)", "value": 45.4}]}]
 
 7. INTENT vs REALITY: When user mentions both goal and actual result, ALWAYS extract ACTUAL RESULT (reality), not goal.
    * Example: "Volevo fare 35s ma ho fatto 36.2" → Extract time_s: 36.2 (actual), NOT 35 (goal)
@@ -500,10 +503,15 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
   
   const headers = { 'Content-Type': 'application/json' };
   
+  // Implementa timeout di sicurezza (15 secondi max)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
   const response = await fetch(workerUrl, {
     method: 'POST',
     headers,
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
+    signal: controller.signal
   });
 
   if (!response.ok) {
@@ -512,6 +520,7 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
   }
 
   const data = await response.json();
+  clearTimeout(timeoutId); // Cancella il timeout se completato con successo
   let rawContent = '';
 
   // Worker ritorna il formato OpenAI-compatible
@@ -621,8 +630,15 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
     parsed.session.type = 'altro';
   }
 
-  return parsed;
+    return parsed;
   } catch (e) {
+    clearTimeout(timeoutId); // Assicura pulizia del timeout
+    
+    // Gestisci errore di timeout specificamente
+    if (e.name === 'AbortError') {
+      console.error('[parseSingleDay] Timeout error - request took too long (>15s)');
+      throw new Error('La richiesta ha impiegato troppo tempo. Controlla la tua connessione e riprova.');
+    }
     console.error(`[parseSingleDay] Final error: ${e.message}`);
     throw new Error(`Parsing ${date}: ${e.message}`);
   }

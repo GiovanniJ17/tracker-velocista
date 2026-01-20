@@ -78,8 +78,8 @@ function App() {
       {/* Main content */}
       <main className="py-8">
         {activeTab === 'input' && <AITrainingInput onDataSaved={handleDataSaved} />}
-        {activeTab === 'stats' && <TrainingDashboard />}
-        {activeTab === 'history' && <SessionHistory />}
+        {activeTab === 'stats' && <TrainingDashboard key={refreshTrigger} />}
+        {activeTab === 'history' && <SessionHistory key={refreshTrigger} />}
         {activeTab === 'profile' && <AthleteProfile key={refreshTrigger} />}
       </main>
 

@@ -74,13 +74,16 @@ async function callAI(prompt, { schema } = {}) {
   const workerUrl = getWorkerUrl();
   const requestBody = buildRequest(prompt, { schema });
 
-  // Chiamata al worker
+  // Implementa timeout di sicurezza (15 secondi max)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const response = await fetch(workerUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
+      signal: controller.signal
     });
 
     if (!response.ok) {
@@ -90,6 +93,7 @@ async function callAI(prompt, { schema } = {}) {
     }
 
     const data = await response.json();
+    clearTimeout(timeoutId); // Cancella il timeout se completato con successo
     // Response ricevuta
     
     const content = (data?.choices?.[0]?.message?.content || '').trim();
@@ -107,6 +111,14 @@ async function callAI(prompt, { schema } = {}) {
       throw new Error(`JSON parse error: ${parseErr.message}`);
     }
   } catch (fetchErr) {
+    clearTimeout(timeoutId); // Cancella il timeout in caso di errore
+    
+    // Gestisci errore di timeout specificamente
+    if (fetchErr.name === 'AbortError') {
+      console.error('[aiCoachService] Timeout error - request took too long (>15s)');
+      throw new Error('La richiesta ha impiegato troppo tempo. Controlla la tua connessione e riprova.');
+    }
+    
     console.error('[aiCoachService] Fetch error:', fetchErr.message);
     throw fetchErr;
   }

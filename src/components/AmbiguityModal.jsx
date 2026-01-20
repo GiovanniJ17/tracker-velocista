@@ -55,20 +55,26 @@ export default function AmbiguityModal({ questions, onResolve, onSkip }) {
           {/* Options */}
           {currentQuestion.options ? (
             <div className="space-y-2">
-              {currentQuestion.options.map((option, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleAnswer(option)}
-                  className="w-full text-left px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-700 
-                           hover:border-blue-500 dark:hover:border-blue-400 
-                           hover:bg-blue-50 dark:hover:bg-blue-900/20 
-                           transition-colors"
-                >
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {option}
-                  </span>
-                </button>
-              ))}
+              {currentQuestion.options.map((option, idx) => {
+                // Gestisce sia il vecchio formato (stringhe) che il nuovo (oggetti {label, value})
+                const label = typeof option === 'object' ? option.label : option;
+                const value = typeof option === 'object' ? option.value : option;
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleAnswer(value)} // Passa il VALUE, non la label
+                    className="w-full text-left px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-700 
+                             hover:border-blue-500 dark:hover:border-blue-400 
+                             hover:bg-blue-50 dark:hover:bg-blue-900/20 
+                             transition-colors"
+                  >
+                    <span className="text-gray-900 dark:text-white font-medium">
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <input
