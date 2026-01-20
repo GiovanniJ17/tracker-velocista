@@ -51,73 +51,88 @@ async function insertTrainingSession(parsedData) {
  */
 async function saveExtractedRecords(sessionId, sessionDate, personalBests = [], injuries = []) {
   try {
-    // NOTA: Logica PB temporaneamente disabilitata
-    // Le tabelle race_records, training_records, strength_records
-    // sono state eliminate nel nuovo schema
-    // I PB sono ora gestiti direttamente in workout_sets
+    console.log('[saveExtractedRecords] Inizio salvataggio PB e infortuni');
+    console.log('[saveExtractedRecords] PB da salvare:', personalBests.length);
+    console.log('[saveExtractedRecords] Infortuni da salvare:', injuries.length);
     
-    // TODO: Implementare tracking PB in workout_sets con campo details.is_pb
-    console.log('[saveExtractedRecords] PB tracking temporaneamente disabilitato (tabelle obsolete rimosse)');
-    console.log('[saveExtractedRecords] PB ricevuti:', personalBests);
-    
-    /* OLD CODE - DISABLED
+    // Salva i Personal Bests nelle tabelle specifiche
     for (const pb of personalBests) {
-      if (pb.type === 'race') {
-        const { data: existingRecords } = await supabase
-          .from('race_records')
-          .select('time_s')
-          .eq('distance_m', pb.distance_m)
-          .order('time_s', { ascending: true })
-          .limit(1);
+      try {
+        if (pb.type === 'race') {
+          // Verifica se è davvero un PB confrontando con i record esistenti
+          const { data: existingRecords } = await supabase
+            .from('race_records')
+            .select('time_s')
+            .eq('distance_m', pb.distance_m)
+            .order('time_s', { ascending: true })
+            .limit(1);
 
-        const isTruePB = !existingRecords || existingRecords.length === 0 || pb.time_s < existingRecords[0].time_s;
+          const isTruePB = !existingRecords || existingRecords.length === 0 || pb.time_s < existingRecords[0].time_s;
 
-        await addRaceRecord(sessionId, {
-          distance_m: pb.distance_m,
-          time_s: pb.time_s,
-          is_personal_best: isTruePB,
-        });
-      } else if (pb.type === 'training') {
-        const { data: existingTraining } = await supabase
-          .from('training_records')
-          .select('performance_value')
-          .eq('exercise_type', 'sprint')
-          .eq('performance_unit', 'seconds')
-          .eq('exercise_name', pb.exercise_name)
-          .order('performance_value', { ascending: true })
-          .limit(1);
+          console.log(`[saveExtractedRecords] Race PB ${pb.distance_m}m: ${pb.time_s}s - È PB: ${isTruePB}`);
 
-        const isTruePB = !existingTraining || existingTraining.length === 0 || pb.performance_value < existingTraining[0].performance_value;
+          await addRaceRecord(sessionId, {
+            distance_m: pb.distance_m,
+            time_s: pb.time_s,
+            is_personal_best: isTruePB,
+            notes: pb.notes || null,
+          });
+        } else if (pb.type === 'training') {
+          // PB di allenamento (sprint, salti, lanci)
+          const exerciseType = pb.exercise_type || 'sprint';
+          const performanceUnit = pb.performance_unit || 'seconds';
+          
+          const { data: existingTraining } = await supabase
+            .from('training_records')
+            .select('performance_value')
+            .eq('exercise_type', exerciseType)
+            .eq('performance_unit', performanceUnit)
+            .eq('exercise_name', pb.exercise_name)
+            .order('performance_value', { ascending: performanceUnit === 'seconds' ? true : false })
+            .limit(1);
 
-        await addTrainingRecord(sessionId, {
-          exercise_name: pb.exercise_name,
-          exercise_type: pb.exercise_type || 'sprint',
-          performance_value: pb.performance_value,
-          performance_unit: pb.performance_unit || 'seconds',
-          rpe: pb.rpe || null,
-          notes: pb.notes || null,
-          is_personal_best: isTruePB,
-        });
-      } else if (pb.type === 'strength') {
-        const { data: existingRecords } = await supabase
-          .from('strength_records')
-          .select('weight_kg')
-          .eq('category', pb.category)
-          .order('weight_kg', { ascending: false })
-          .limit(1);
+          const isBetter = performanceUnit === 'seconds'
+            ? (!existingTraining || existingTraining.length === 0 || pb.performance_value < existingTraining[0].performance_value)
+            : (!existingTraining || existingTraining.length === 0 || pb.performance_value > existingTraining[0].performance_value);
 
-        const isTruePB = !existingRecords || existingRecords.length === 0 || pb.weight_kg > existingRecords[0].weight_kg;
+          console.log(`[saveExtractedRecords] Training PB ${pb.exercise_name}: ${pb.performance_value}${performanceUnit} - È PB: ${isBetter}`);
 
-        await addStrengthRecord(sessionId, {
-          exercise_name: pb.exercise_name,
-          category: pb.category,
-          weight_kg: pb.weight_kg,
-          reps: pb.reps || 1,
-          is_personal_best: isTruePB,
-        });
+          await addTrainingRecord(sessionId, {
+            exercise_name: pb.exercise_name,
+            exercise_type: exerciseType,
+            performance_value: pb.performance_value,
+            performance_unit: performanceUnit,
+            rpe: pb.rpe || null,
+            notes: pb.notes || null,
+            is_personal_best: isBetter,
+          });
+        } else if (pb.type === 'strength') {
+          // PB di forza (squat, bench, etc.)
+          const { data: existingRecords } = await supabase
+            .from('strength_records')
+            .select('weight_kg')
+            .eq('category', pb.category)
+            .order('weight_kg', { ascending: false })
+            .limit(1);
+
+          const isTruePB = !existingRecords || existingRecords.length === 0 || pb.weight_kg > existingRecords[0].weight_kg;
+
+          console.log(`[saveExtractedRecords] Strength PB ${pb.exercise_name} (${pb.category}): ${pb.weight_kg}kg - È PB: ${isTruePB}`);
+
+          await addStrengthRecord(sessionId, {
+            exercise_name: pb.exercise_name,
+            category: pb.category,
+            weight_kg: pb.weight_kg,
+            reps: pb.reps || 1,
+            notes: pb.notes || null,
+            is_personal_best: isTruePB,
+          });
+        }
+      } catch (pbError) {
+        console.warn(`[saveExtractedRecords] Errore nel salvataggio PB (${pb.type}):`, pbError);
+        // Continua con gli altri PB anche se uno fallisce
       }
     }
-    */
 
     // Salva gli infortuni
     for (const injury of injuries) {
