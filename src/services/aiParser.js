@@ -505,7 +505,9 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
   
   // Implementa timeout di sicurezza (15 secondi max)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let timeoutId; // Dichiara prima del try per accesso nel catch
+  
+  timeoutId = setTimeout(() => controller.abort(), 15000);
 
   const response = await fetch(workerUrl, {
     method: 'POST',

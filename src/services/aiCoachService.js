@@ -76,7 +76,9 @@ async function callAI(prompt, { schema } = {}) {
 
   // Implementa timeout di sicurezza (15 secondi max)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let timeoutId; // Dichiara prima del try per accesso nel catch
+  
+  timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const response = await fetch(workerUrl, {
