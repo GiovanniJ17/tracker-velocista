@@ -16,11 +16,11 @@
  *   npm run test:stress full
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Configurazioni predefinite
 const testProfiles = {
@@ -67,33 +67,18 @@ const config = testProfiles[profile];
 console.log(`\n🔥 ${config.description}`);
 console.log(`📌 ${config.useCase}\n`);
 
-// Leggi lo script originale
-const scriptPath = path.join(__dirname, 'tests', 'massive-stress-test.js');
-let scriptContent = fs.readFileSync(scriptPath, 'utf-8');
-
-// Sostituisci parametri
-scriptContent = scriptContent.replace(
-  /const sessionsToInsert = \d+;/,
-  `const sessionsToInsert = ${config.sessions};`
-);
-
-scriptContent = scriptContent.replace(
-  /const concurrentUsers = \d+;/,
-  `const concurrentUsers = ${config.users};`
-);
-
-// Scrivi file temporaneo
-const tempScriptPath = path.join(__dirname, '.stress-test-temp.js');
-fs.writeFileSync(tempScriptPath, scriptContent);
-
-// Esegui con lo stesso processo (così eredita environment)
-// Converti path assoluto a URL file:// per Windows compatibility
-const tempScriptUrl = pathToFileURL(tempScriptPath).href;
-import(tempScriptUrl).finally(() => {
-  // Cleanup
-  try {
-    fs.unlinkSync(tempScriptPath);
-  } catch (e) {
-    // ignore
+// Esegui lo script principale con variabili d'ambiente
+const scriptPath = join(__dirname, 'tests', 'massive-stress-test.js');
+const child = spawn('node', [scriptPath], {
+  cwd: process.cwd(),
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    STRESS_TEST_SESSIONS: config.sessions.toString(),
+    STRESS_TEST_USERS: config.users.toString()
   }
+});
+
+child.on('exit', (code) => {
+  process.exit(code);
 });

@@ -38,8 +38,8 @@ const log = {
 const generateMockSession = (index, date) => ({
   session: {
     title: `Sessione Stress Test #${index + 1}`,
-    type: ['pista', 'strada', 'palestra', 'piscina'][index % 4],
-    rpe: Math.floor(Math.random() * 9) + 3,
+    type: ['pista', 'strada', 'palestra', 'gara'][index % 4],
+    rpe: Math.floor(Math.random() * 8) + 3, // 3..10 to satisfy CHECK
     feeling: ['Fresco', 'Stanco', 'Ottimo', 'OK'][Math.floor(Math.random() * 4)],
     notes: `Test automatico di carico - ${date}`
   },
@@ -67,11 +67,11 @@ const generateMockSession = (index, date) => ({
           distance_m: 60 + (index % 5) * 20,
           time_s: 7.5 + Math.random() * 2,
           sets: 5 + Math.floor(Math.random() * 5),
-          recovery_s: 180 + Math.random() * 120
+          recovery_s: Math.floor(180 + Math.random() * 120)
         },
         {
           exercise_name: 'Squat',
-          category: 'strength',
+          category: 'lift',
           weight_kg: 60 + Math.random() * 80,
           reps: 8 + Math.floor(Math.random() * 4),
           sets: 3 + Math.floor(Math.random() * 2)
@@ -118,6 +118,16 @@ async function verifyRPC() {
   }
 }
 
+const toInt = (value, fallback = null) => {
+  const num = parseInt(value, 10);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const toNum = (value, fallback = null) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+
 async function bulkInsertSessions(count, useRPC) {
   log.section(`Fase 1: Inserimento Massivo (${count} sessioni)`);
   
@@ -127,39 +137,38 @@ async function bulkInsertSessions(count, useRPC) {
   let errorCount = 0;
   const errors = [];
 
-  console.log(`⏳ Inserendo ${count} sessioni...`);
+  console.log(`⏳ Inserendo ${count} sessioni (metodo: ${useRPC ? 'RPC' : 'direct insert'})...`);
 
   if (useRPC) {
-    // Usa RPC (più veloce)
     const insertPromises = [];
     for (let i = 0; i < count; i++) {
       const sessionDate = new Date(startDate);
       sessionDate.setDate(startDate.getDate() + i);
       const dateStr = sessionDate.toISOString().split('T')[0];
-      
       const mockData = generateMockSession(i, dateStr);
-      
+
       insertPromises.push(
-        supabase.rpc('insert_full_training_session', {
-          p_date: dateStr,
-          p_title: mockData.session.title,
-          p_type: mockData.session.type,
-          p_groups: mockData.groups
-        }).then(() => {
-          successCount++;
-          if ((successCount + errorCount) % 10 === 0) {
-            process.stdout.write('.');
-          }
-        }).catch((error) => {
-          errorCount++;
-          errors.push(`[RPC Sessione ${i}] ${error.message}`);
-        })
+        supabase
+          .rpc('insert_full_training_session', {
+            p_date: dateStr,
+            p_title: mockData.session.title,
+            p_type: mockData.session.type,
+            p_groups: mockData.groups
+          })
+          .then(({ error }) => {
+            if (error) throw error;
+            successCount++;
+            if ((successCount + errorCount) % 10 === 0) process.stdout.write('.');
+          })
+          .catch((error) => {
+            errorCount++;
+            errors.push(`[RPC Sessione ${i}] ${error.message}`);
+          })
       );
     }
-
     await Promise.all(insertPromises);
   } else {
-    // Usa insert diretto (più lento ma sempre funziona)
+    // Insert diretto
     for (let i = 0; i < count; i++) {
       try {
         const sessionDate = new Date(startDate);
@@ -189,9 +198,9 @@ async function bulkInsertSessions(count, useRPC) {
           const { data: groupData, error: groupError } = await supabase
             .from('workout_groups')
             .insert({
-              training_session_id: sessionData.id,
+              session_id: sessionData.id,
               name: group.name,
-              order_index: group.order_index
+              order_index: toInt(group.order_index, 0)
             })
             .select('id')
             .single();
@@ -200,17 +209,19 @@ async function bulkInsertSessions(count, useRPC) {
 
           // Insert workout_sets
           for (const set of group.sets) {
-            await supabase.from('workout_sets').insert({
-              workout_group_id: groupData.id,
+            const { error: setError } = await supabase.from('workout_sets').insert({
+              group_id: groupData.id,
               exercise_name: set.exercise_name,
               category: set.category,
-              distance_m: set.distance_m || null,
-              time_s: set.time_s || null,
-              weight_kg: set.weight_kg || null,
-              reps: set.reps || null,
-              sets: set.sets || 1,
-              recovery_s: set.recovery_s || null
+              distance_m: toNum(set.distance_m),
+              time_s: toNum(set.time_s),
+              weight_kg: toNum(set.weight_kg),
+              reps: toInt(set.reps),
+              sets: toInt(set.sets, 1),
+              recovery_s: toInt(set.recovery_s)
             });
+            
+            if (setError) throw setError;
           }
         }
 
@@ -220,7 +231,7 @@ async function bulkInsertSessions(count, useRPC) {
         }
       } catch (error) {
         errorCount++;
-        errors.push(`[Direct Insert Sessione ${i}] ${error.message}`);
+        errors.push(`[Insert Sessione ${i}] ${error.message}`);
       }
     }
   }
@@ -258,35 +269,44 @@ async function concurrentReads(concurrentUsers) {
       (async () => {
         try {
           // Query 1: Lettura sessioni recenti
-          const sessions = await supabase
+          const { data: sessionData, error: sessionError } = await supabase
             .from('training_sessions')
             .select('*')
             .order('date', { ascending: false })
             .limit(10);
 
-          if (sessions.error) throw sessions.error;
+          if (sessionError) {
+            console.error(`[Query 1 Error] ${sessionError.message}`);
+            throw sessionError;
+          }
 
           // Query 2: Lettura record personali
-          const records = await supabase
+          const { data: recordData, error: recordError } = await supabase
             .from('race_records')
             .select('*')
-            .filter('is_personal_best', 'eq', true)
             .limit(10);
 
-          if (records.error) throw records.error;
+          if (recordError) {
+            console.error(`[Query 2 Error] ${recordError.message}`);
+            throw recordError;
+          }
 
           // Query 3: Lettura statistiche
-          const stats = await supabase
+          const { data: statsData, error: statsError } = await supabase
             .from('monthly_stats')
             .select('*')
-            .order('month', { ascending: false })
+            .order('created_at', { ascending: false })
             .limit(12);
 
-          if (stats.error) throw stats.error;
+          if (statsError) {
+            console.error(`[Query 3 Error] ${statsError.message}`);
+            throw statsError;
+          }
 
           successCount++;
         } catch (error) {
           errorCount++;
+          console.error(`[Read Error ${i}] ${error.message}`);
         }
 
         if ((successCount + errorCount) % 5 === 0) {
@@ -319,6 +339,20 @@ async function testPersonalBestFlow() {
   console.log(`⏳ Testing PB extraction and storage...`);
 
   try {
+    // Usa una sessione esistente come riferimento (necessario per FK)
+    const { data: sessionRow, error: sessionPickError } = await supabase
+      .from('training_sessions')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (sessionPickError || !sessionRow?.id) {
+      throw new Error('Nessuna sessione trovata per associare i PB (session_id obbligatorio)');
+    }
+
+    const sessionId = sessionRow.id;
+
     // Simula estrazione di PB
     const mockExtractedPBs = [
       { type: 'race', exercise_name: '100m', distance_m: 100, time_s: 9.99, notes: 'Test stress' },
@@ -332,6 +366,7 @@ async function testPersonalBestFlow() {
     for (const pb of mockExtractedPBs) {
       if (pb.type === 'race') {
         await supabase.from('race_records').insert({
+          session_id: sessionId,
           distance_m: pb.distance_m,
           time_s: pb.time_s,
           is_personal_best: true,
@@ -339,7 +374,9 @@ async function testPersonalBestFlow() {
         });
       } else if (pb.type === 'strength') {
         await supabase.from('strength_records').insert({
+          session_id: sessionId,
           exercise_name: pb.exercise_name,
+          category: 'squat',
           weight_kg: pb.weight_kg,
           reps: pb.reps,
           is_personal_best: true,
@@ -449,17 +486,17 @@ ${colors.bold}RACCOMANDAZIONI${colors.reset}
 async function runStressTest() {
   log.title('MASSIVE STRESS TEST SUITE');
   
+  // Leggi parametri da environment variables (settati dal runner)
+  // Fallback a default se non settati
+  const sessionsToInsert = parseInt(process.env.STRESS_TEST_SESSIONS || '50', 10);
+  const concurrentUsers = parseInt(process.env.STRESS_TEST_USERS || '20', 10);
+  const useRPC = process.env.STRESS_USE_RPC === 'false' ? false : true;
+  
   // Verifica prerequisiti
   if (!(await testDatabaseConnection())) {
     log.error('Impossibile continuare senza connessione database');
     process.exit(1);
   }
-
-  const useRPC = await verifyRPC();
-
-  // Parametri test
-  const sessionsToInsert = 50; // Aumenta a 365 per test massivo
-  const concurrentUsers = 20;
 
   // Esegui fasi
   const writeResults = await bulkInsertSessions(sessionsToInsert, useRPC);
