@@ -147,10 +147,26 @@ GRANT SELECT ON public.view_strength_records TO anon, authenticated;
 GRANT SELECT ON public.view_training_records TO anon, authenticated;
 
 -- STEP 5: (OPZIONALE) Rinomina le vecchie tabelle invece di eliminarle
--- Questo permette di fare rollback se necessario
+-- PRIMA: Rinomina le vecchie tabelle invece di eliminarle
 ALTER TABLE IF EXISTS public.race_records RENAME TO _deprecated_race_records;
 ALTER TABLE IF EXISTS public.strength_records RENAME TO _deprecated_strength_records;
 ALTER TABLE IF EXISTS public.training_records RENAME TO _deprecated_training_records;
+
+-- POI: Crea le viste con i nomi ORIGINALI delle tabelle
+-- Questo permette al frontend di continuare a funzionare senza modifiche
+CREATE OR REPLACE VIEW public.race_records AS 
+SELECT * FROM public.view_race_records;
+
+CREATE OR REPLACE VIEW public.strength_records AS 
+SELECT * FROM public.view_strength_records;
+
+CREATE OR REPLACE VIEW public.training_records AS 
+SELECT * FROM public.view_training_records;
+
+-- Grant permissions sulle viste principali
+GRANT SELECT ON public.race_records TO anon, authenticated;
+GRANT SELECT ON public.strength_records TO anon, authenticated;
+GRANT SELECT ON public.training_records TO anon, authenticated;
 
 -- STEP 6: Crea funzione helper per calcolare automaticamente i PB
 CREATE OR REPLACE FUNCTION public.check_and_mark_personal_best()

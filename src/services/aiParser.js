@@ -33,12 +33,22 @@ CRITICAL RULES:
 3. DISTANCES: Always meters. "12km" = 12000m, "1.5km" = 1500m
 4. PACING: "4:30/km" over 12km = distance_m: 12000, time_s: null (or 12 * 270 = 3240s if you want total time)
 5. MULTIPLE EXERCISES: "5 esercizi 4x10" = create 5 SEPARATE exercise entries
-6. INTENT vs REALITY: When user mentions both goal and actual result, ALWAYS extract ACTUAL RESULT (reality), not goal.
+
+6. ⚠️ AMBIGUITY HANDLING - NEVER GUESS, ALWAYS ASK:
+   * If recovery time is ambiguous (e.g., "rec 3" without min/sec), MUST populate questions_for_user array
+   * Example: User says "rec 3" → Ask: "Il recupero di 3 è in secondi o minuti?"
+   * If distance unit is missing and not obvious from context → Ask
+   * If weight unit is missing and not obvious → Ask
+   * If exercise name is vague ("leg press" could be multiple variations) → Ask or use best judgment
+   * CRITICAL: Do NOT default to minutes or seconds. If you cannot be 100% certain from context (e.g., previous sets in the same group with explicit units), you MUST ask.
+   * Format questions_for_user as: [{"field": "recovery_s", "question": "Il recupero di 3 è in secondi o minuti?", "options": ["3 secondi", "3 minuti"]}]
+
+7. INTENT vs REALITY: When user mentions both goal and actual result, ALWAYS extract ACTUAL RESULT (reality), not goal.
    * Example: "Volevo fare 35s ma ho fatto 36.2" → Extract time_s: 36.2 (actual), NOT 35 (goal)
    * Example: "Obiettivo 10.5 ma fermato a 10.8" → Extract time_s: 10.8 (actual), NOT 10.5 (goal)
    * Keywords: "volevo", "mirava", "dovrebbe", "ma ho fatto", "ma sono arrivato", "invece ho", "però", "purtroppo"
 
-7. STRENGTH MAXES: Recognize various ways of expressing personal bests for strength exercises:
+8. STRENGTH MAXES: Recognize various ways of expressing personal bests for strength exercises:
    * "provato il massimale, salito a 160kg" → Extract 160kg as 1RM
    * "Squat massimale 160kg" → Extract 160kg
    * "ho fatto 90kg PB" → Extract 90kg

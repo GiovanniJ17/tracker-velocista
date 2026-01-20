@@ -11,9 +11,16 @@
 
 // CRITICAL: Change this to your production domain!
 const ALLOWED_ORIGINS = [
+  // Development
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://your-app.vercel.app', // TODO: Replace with actual production URL
+  
+  // ⚠️ PRODUCTION: Aggiungi qui il tuo dominio reale prima del deploy!
+  // Esempi:
+  // 'https://training-log.pages.dev',
+  // 'https://tracker-velocista.pages.dev',
+  // 'https://your-custom-domain.com',
+  // Se NON aggiorni questa lista, il frontend NON potrà comunicare con il worker (CORS error)
 ];
 
 const RATE_LIMIT = {
