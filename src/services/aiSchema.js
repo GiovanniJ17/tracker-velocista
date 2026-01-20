@@ -181,12 +181,14 @@ export const TRAINING_SESSION_SCHEMA = {
 
 /**
  * Helper per costruire la request con schema
+ * NOTA: Il Worker usa JSON mode nativo di Gemini, non lo schema strutturato
  */
 export function buildSchemaRequest(provider, messages, schema = TRAINING_SESSION_SCHEMA) {
   return {
     provider,
     messages,
     model: 'gemini-2.5-flash',
-    responseSchema: schema
+    responseFormat: { type: 'json_object' }
+    // Nota: Rimuovi responseSchema perché il Worker lo gestisce internamente
   };
 }
