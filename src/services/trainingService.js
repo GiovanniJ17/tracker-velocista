@@ -103,9 +103,9 @@ async function insertTrainingSessionDirect(standardizedData) {
       throw groupError;
     }
 
-    // 3. Insert sets for this group
+    // 3. Insert sets for this group ONE BY ONE to avoid stack depth issues
     if (group.sets && group.sets.length > 0) {
-      const setsToInsert = group.sets.map(set => {
+      for (const set of group.sets) {
         const setData = {
           group_id: groupData.id,
           exercise_name: set.exercise_name || 'Esercizio',
@@ -121,18 +121,17 @@ async function insertTrainingSessionDirect(standardizedData) {
         if (set.recovery_s != null && set.recovery_s !== undefined) setData.recovery_s = set.recovery_s;
         if (set.notes) setData.notes = set.notes;
         if (set.details && Object.keys(set.details).length > 0) setData.details = set.details;
-        
-        return setData;
-      });
 
-      const { error: setsError } = await supabase
-        .from('workout_sets')
-        .insert(setsToInsert);
+        const { error: setError } = await supabase
+          .from('workout_sets')
+          .insert(setData);
 
-      if (setsError) {
-        // Cleanup: delete session (cascade will delete groups and sets)
-        await supabase.from('training_sessions').delete().eq('id', session.id);
-        throw setsError;
+        if (setError) {
+          console.error('Error inserting set:', setError);
+          // Cleanup: delete session (cascade will delete groups and sets)
+          await supabase.from('training_sessions').delete().eq('id', session.id);
+          throw setError;
+        }
       }
     }
   }
