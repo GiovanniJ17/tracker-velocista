@@ -10,7 +10,11 @@
     "pages:build": "npm run build",
     "pages:dev": "wrangler pages dev --compatibility-date=2024-01-01 -- npm run dev",
     "setup": "node scripts/setup.js",
-    "check-env": "node scripts/check-env.js"
+    "check-env": "node scripts/check-env.js",
+    "test:stress": "node scripts/stress-test-runner.js standard",
+    "test:stress:quick": "node scripts/stress-test-runner.js quick",
+    "test:stress:heavy": "node scripts/stress-test-runner.js heavy",
+    "test:stress:full": "node scripts/stress-test-runner.js full"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

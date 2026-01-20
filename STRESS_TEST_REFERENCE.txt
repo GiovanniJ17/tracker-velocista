@@ -1,0 +1,132 @@
+🧪 STRESS TEST MASSIVO - REFERENCE CARD
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🚀 4 COMANDI PRONTI ALL'USO
+
+npm run test:stress:quick       30 sec   10 sess, 5 utenti    [INIZIA QUI]
+npm run test:stress             1 min    50 sess, 20 utenti   [STANDARD]
+npm run test:stress:heavy       3 min    100 sess, 50 utenti  [PESANTE]
+npm run test:stress:full        10 min   365 sess, 100 utenti [PRODUZIONE]
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📊 INTERPRETARE I RISULTATI
+
+WRITESPEED (sessioni/sec)
+  > 10/sec     ✅ ECCELLENTE
+  5-10/sec     ✅ BUONO
+  2-5/sec      ⚠️  LENTO
+  < 2/sec      ❌ CRITICO
+
+READSPEED (tempo per 20 utenti)
+  < 1 sec      ✅ VELOCE
+  1-2 sec      ✅ ACCETTABILE
+  2-5 sec      ⚠️  LENTO
+  > 5 sec      ❌ CRITICO
+
+PB FLOW
+  Salvati = Recuperati    ✅ CONSISTENTE
+  Salvati ≠ Recuperati    ❌ PROBLEMA
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📚 DOCUMENTAZIONE
+
+RUN_STRESS_TEST.md                  Inizia qui (5 min)
+docs/STRESS_TEST_README.md          Panoramica (10 min)
+docs/STRESS_TEST_QUICK_START.md     4 comandi (3 min)
+docs/STRESS_TEST_GUIDE.md           Guida completa (30 min)
+docs/STRESS_TEST_SYSTEM.md          Architettura (20 min)
+docs/STRESS_TEST_INDEX.md           Mappa navigazione
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🔧 PROBLEMI COMUNI
+
+Errore: "VITE_ variables not found"
+  → cat .env | grep VITE_SUPABASE
+  → Se vuoto, aggiungi VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
+
+Errore: "No function found with name insert_full_training_session"
+  → Esegui db-schema.sql su Supabase SQL Editor
+
+Writespeed troppo lenta (< 2/sec)
+  → Esegui db-optimize.sql su Supabase
+  → Riprova il test
+
+Readspeed troppo lenta (> 5s)
+  → Aggiungi indici con db-optimize.sql
+  → Verifica: SELECT * FROM pg_indexes WHERE tablename = 'training_sessions';
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📁 FILE CREATI
+
+Scripts:
+  scripts/tests/massive-stress-test.js (850 righe)
+  scripts/stress-test-runner.js (70 righe)
+
+Docs:
+  RUN_STRESS_TEST.md
+  docs/STRESS_TEST_README.md
+  docs/STRESS_TEST_QUICK_START.md
+  docs/STRESS_TEST_GUIDE.md
+  docs/STRESS_TEST_SYSTEM.md
+  docs/STRESS_TEST_INDEX.md
+
+═══════════════════════════════════════════════════════════════════════════════
+
+✨ FEATURES
+
+✓ 4 fasi di test automatizzate
+  1. WRITESPEED - Inserimento massivo
+  2. READSPEED - Letture concorrenti
+  3. PB FLOW - Personal Bests ciclo completo
+  4. CLEANUP - Pulizia dati
+
+✓ Fallback intelligente (RPC vs Direct Insert)
+✓ Cleanup automatico dei dati
+✓ Report colorato ANSI facile da leggere
+✓ Logging dettagliato per debugging
+✓ Error handling robusto
+✓ 4 profili di test (quick/standard/heavy/full)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 PROSSIMI PASSI
+
+1. Esegui: npm run test:stress:quick
+2. Se ✅ → esegui: npm run test:stress
+3. Se ✅ → esegui: npm run test:stress:heavy
+4. Se ✅ → esegui: npm run test:stress:full
+5. Se tutto ✅ → Sistema pronto per deploy
+
+═══════════════════════════════════════════════════════════════════════════════
+
+💡 PRO TIPS
+
+✓ Esegui test in orari tranquilli
+✓ Monitora Supabase Dashboard durante il test
+✓ Salva i risultati: npm run test:stress > results.txt
+✓ Ripeti test dopo ottimizzazioni per verificare miglioramenti
+✓ Inizia sempre con quick test, non saltare a full
+
+═══════════════════════════════════════════════════════════════════════════════
+
+REFERENCE VELOCE
+
+Quick test?              npm run test:stress:quick
+Standard test?           npm run test:stress
+Risultati troppo lenti?  Vedi troubleshooting in docs/STRESS_TEST_GUIDE.md
+Come funziona?           Leggi docs/STRESS_TEST_SYSTEM.md
+Problema?                Leggi docs/STRESS_TEST_INDEX.md (mappa navigazione)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SALVAGUARDATO:
+  Questo file è una reference card veloce
+  Per dettagli completi, leggi la documentazione
+  Setup completato il: 20 Gennaio 2026
+
+═══════════════════════════════════════════════════════════════════════════════
