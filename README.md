@@ -53,6 +53,13 @@ L'**AI interpreta automaticamente** e crea dati strutturati nel database:
 
 ## 📊 Schema Database
 
+**Vedi [DATABASE_GUIDE.md](DATABASE_GUIDE.md) per la guida completa al database**
+
+File SQL organizzati:
+- 📄 `db-schema.sql` - Schema completo tabelle
+- ⚡ `db-optimize.sql` - Indici + RLS + Cascading Deletes
+- 🗑️ `db-reset.sql` - Reset completo database
+
 ```sql
 training_sessions          workout_groups           workout_sets
 ┌────────────────┐        ┌──────────────┐        ┌────────────────┐
@@ -66,6 +73,9 @@ training_sessions          workout_groups           workout_sets
 └────────────────┘                                │ time_s         │
                                                   │ recovery_s     │
                                                   └────────────────┘
+
++ race_records, strength_records, training_records (Personal Bests)
++ injury_history, monthly_stats
 ```
 
 ## 🚀 Quick Start

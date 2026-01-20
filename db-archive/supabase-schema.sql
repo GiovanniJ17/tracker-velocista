@@ -40,6 +40,47 @@ CREATE TABLE public.monthly_stats (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT monthly_stats_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.race_records (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  session_id uuid NOT NULL,
+  distance_m integer NOT NULL CHECK (distance_m > 0),
+  time_s numeric NOT NULL CHECK (time_s > 0::numeric),
+  rpe integer CHECK (rpe >= 0 AND rpe <= 10),
+  location text,
+  competition_name text,
+  notes text,
+  is_personal_best boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT race_records_pkey PRIMARY KEY (id),
+  CONSTRAINT race_records_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.training_sessions(id)
+);
+CREATE TABLE public.strength_records (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  session_id uuid NOT NULL,
+  exercise_name text NOT NULL,
+  category text NOT NULL CHECK (category = ANY (ARRAY['squat'::text, 'bench'::text, 'deadlift'::text, 'clean'::text, 'jerk'::text, 'press'::text, 'pull'::text, 'other'::text])),
+  weight_kg numeric NOT NULL CHECK (weight_kg > 0::numeric),
+  reps integer NOT NULL DEFAULT 1,
+  notes text,
+  is_personal_best boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT strength_records_pkey PRIMARY KEY (id),
+  CONSTRAINT strength_records_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.training_sessions(id)
+);
+CREATE TABLE public.training_records (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  session_id uuid NOT NULL,
+  exercise_name text NOT NULL,
+  exercise_type text NOT NULL CHECK (exercise_type = ANY (ARRAY['sprint'::text, 'jump'::text, 'throw'::text, 'endurance'::text])),
+  performance_value numeric NOT NULL,
+  performance_unit text NOT NULL CHECK (performance_unit = ANY (ARRAY['seconds'::text, 'meters'::text, 'reps'::text, 'kg'::text])),
+  rpe integer CHECK (rpe >= 0 AND rpe <= 10),
+  notes text,
+  is_personal_best boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT training_records_pkey PRIMARY KEY (id),
+  CONSTRAINT training_records_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.training_sessions(id)
+);
 CREATE TABLE public.training_sessions (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   date date NOT NULL DEFAULT CURRENT_DATE,
@@ -81,20 +122,3 @@ CREATE TABLE public.workout_sets (
   CONSTRAINT workout_sets_pkey PRIMARY KEY (id),
   CONSTRAINT workout_sets_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.workout_groups(id)
 );
-
--- Performance Indexes
--- Ottimizza le query di join per le foreign keys
-CREATE INDEX IF NOT EXISTS idx_workout_groups_session ON public.workout_groups(session_id);
-CREATE INDEX IF NOT EXISTS idx_workout_sets_group ON public.workout_sets(group_id);
-
--- Ottimizza le query per data (uso frequente per filtrare sessioni)
-CREATE INDEX IF NOT EXISTS idx_training_sessions_date ON public.training_sessions(date DESC);
-
--- Ottimizza le query per tipo di sessione
-CREATE INDEX IF NOT EXISTS idx_training_sessions_type ON public.training_sessions(type);
-
--- Ottimizza le ricerche per categoria di esercizio
-CREATE INDEX IF NOT EXISTS idx_workout_sets_category ON public.workout_sets(category);
-
--- Indice composito per query statistiche comuni (data + tipo)
-CREATE INDEX IF NOT EXISTS idx_training_sessions_date_type ON public.training_sessions(date DESC, type);
