@@ -46,12 +46,21 @@ export default function AITrainingInput({ onDataSaved }) {
 
     try {
       const parsed = await parseTrainingWithAI(trainingText, new Date());
-      
+
       // Estrai questions e warnings dall'AI
       const questionsFromAI = parsed.questions_for_user || [];
       const warningsFromAI = parsed.warnings || [];
-      
-      // Valida i dati
+
+      // Se ci sono ambiguità, mostra subito il modal e rimanda la validazione
+      if (questionsFromAI.length > 0) {
+        setParsedData(parsed);
+        setAmbiguityQuestions(questionsFromAI);
+        if (warningsFromAI.length > 0) setWarnings(warningsFromAI);
+        setLoading(false);
+        return;
+      }
+
+      // Altrimenti valida normalmente
       const validation = validateParsedData(parsed);
       if (!validation.valid) {
         setError(`Errori di validazione: ${validation.errors.join(', ')}`);
@@ -59,11 +68,6 @@ export default function AITrainingInput({ onDataSaved }) {
         return;
       }
 
-      // Se ci sono domande, mostra il modal
-      if (questionsFromAI.length > 0) {
-        setAmbiguityQuestions(questionsFromAI);
-      }
-      
       // Mostra i warnings
       if (warningsFromAI.length > 0) {
         setWarnings(warningsFromAI);
