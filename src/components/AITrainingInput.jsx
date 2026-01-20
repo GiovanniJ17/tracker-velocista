@@ -47,11 +47,6 @@ export default function AITrainingInput({ onDataSaved }) {
     try {
       const parsed = await parseTrainingWithAI(trainingText, new Date());
 
-        // 🔍 DEBUG: Controlla cosa arriva dall'AI
-        console.log("🤖 AI RAW RESPONSE:", parsed);
-        console.log("❓ Questions detected:", parsed.questions_for_user);
-        console.log("⚠️  Warnings detected:", parsed.warnings);
-      
         // Estrai questions e warnings dall'AI
       const questionsFromAI = parsed.questions_for_user || [];
       const warningsFromAI = parsed.warnings || [];

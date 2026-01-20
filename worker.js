@@ -14,6 +14,7 @@ const ALLOWED_ORIGINS = [
   // Development
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:3001',
   
   // Production (aggiorna se cambi dominio)
   'https://tracker-velocista.pages.dev',
@@ -83,9 +84,10 @@ export default {
 
     try {
       const body = await request.json();
-      const { provider, messages, model, apiKey, responseSchema } = body;
+      const { provider, messages, model, apiKey, responseSchema, responseFormat } = body;
 
-      console.log('[Worker] Request received:', { provider, model, hasApiKey: !!apiKey, hasSchema: !!responseSchema, messagesCount: messages?.length });
+      const inferredSchema = responseSchema || (responseFormat?.type === 'json_object' ? { type: 'object' } : null);
+      console.log('[Worker] Request received:', { provider, model, hasApiKey: !!apiKey, hasSchema: !!inferredSchema, messagesCount: messages?.length });
 
       if (!provider) {
         return new Response(JSON.stringify({ error: { message: 'Provider è obbligatorio' } }), {
@@ -113,7 +115,7 @@ export default {
           });
         }
         console.log('[Worker] Calling Gemini with model:', model || 'gemini-2.5-flash');
-        result = await callGemini(messages, model || 'gemini-2.5-flash', geminiKey, responseSchema);
+        result = await callGemini(messages, model || 'gemini-2.5-flash', geminiKey, inferredSchema);
       } else {
         return new Response(JSON.stringify({ error: { message: 'Provider non supportato' } }), {
           status: 400,

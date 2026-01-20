@@ -6,16 +6,25 @@
 import { useState, useEffect } from 'react';
 import { generateProactiveAlerts } from '../services/proactiveCoach';
 
-export default function CoachAlerts() {
-  const [alerts, setAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
+// Se vengono passati alerts/ loading dal parent non viene fatta la fetch interna
+export default function CoachAlerts({ alerts: externalAlerts, loading: externalLoading = false }) {
+  const controlled = externalAlerts !== undefined;
+  const [alerts, setAlerts] = useState(externalAlerts || []);
+  const [loading, setLoading] = useState(controlled ? externalLoading : true);
   const [dismissedAlerts, setDismissedAlerts] = useState(new Set());
 
   useEffect(() => {
+    if (controlled) {
+      setAlerts(externalAlerts || []);
+      setLoading(externalLoading);
+      return;
+    }
+
     loadAlerts();
-  }, []);
+  }, [controlled, externalAlerts, externalLoading]);
 
   const loadAlerts = async () => {
+    if (controlled) return;
     setLoading(true);
     try {
       const generatedAlerts = await generateProactiveAlerts();

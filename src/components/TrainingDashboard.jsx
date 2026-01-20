@@ -273,7 +273,7 @@ export default function TrainingDashboard() {
       </div>
 
       {/* Proactive Alerts */}
-      {alerts.length > 0 && <CoachAlerts alerts={alerts} />}
+      {alerts.length > 0 && <CoachAlerts alerts={alerts} loading={false} />}
 
       {/* Coach AI & What-if */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

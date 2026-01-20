@@ -6,14 +6,51 @@
 const MODEL = 'gemini-2.5-flash';
 const DEFAULT_WORKER_URL = 'http://localhost:5000';
 
+// Schemi di output attesi per forzare JSON valido dal worker
+const WEEKLY_INSIGHT_SCHEMA = {
+  type: 'object',
+  properties: {
+    positive: { type: 'string' },
+    warning: { type: 'string' },
+    advice: { type: 'string' },
+  },
+  required: ['positive', 'warning', 'advice']
+};
+
+const WHAT_IF_SCHEMA = {
+  type: 'object',
+  properties: {
+    projection: { type: 'string' },
+    rationale: { type: 'string' },
+    caution: { type: 'string' },
+  },
+  required: ['projection', 'rationale', 'caution']
+};
+
+const ADAPTIVE_SCHEMA = {
+  type: 'object',
+  properties: {
+    signal: { type: 'string' },
+    suggestion: { type: 'string' },
+    recovery: { type: 'string' },
+  },
+  required: ['signal', 'suggestion', 'recovery']
+};
+
 function getWorkerUrl() {
-  if (import.meta.env.MODE === 'production') {
-    return import.meta.env.VITE_WORKER_URL || 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
+  // Consente override anche in dev con VITE_WORKER_URL
+  if (import.meta.env.VITE_WORKER_URL) {
+    return import.meta.env.VITE_WORKER_URL;
   }
+
+  if (import.meta.env.MODE === 'production') {
+    return 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
+  }
+
   return DEFAULT_WORKER_URL;
 }
 
-function buildRequest(prompt, { json = true } = {}) {
+function buildRequest(prompt, { schema } = {}) {
   const base = {
     provider: 'gemini',
     model: MODEL,
@@ -24,16 +61,18 @@ function buildRequest(prompt, { json = true } = {}) {
     temperature: 0.4,
   };
 
-  const withFormat = json ? { ...base, responseFormat: { type: 'json_object' } } : base;
+  const withSchema = schema ? { ...base, responseSchema: schema } : base;
+
   if (import.meta.env.MODE !== 'production') {
-    return { ...withFormat, apiKey: import.meta.env.VITE_GEMINI_API_KEY };
+    return { ...withSchema, apiKey: import.meta.env.VITE_GEMINI_API_KEY };
   }
-  return withFormat;
+
+  return withSchema;
 }
 
-async function callAI(prompt, { json = true } = {}) {
+async function callAI(prompt, { schema } = {}) {
   const workerUrl = getWorkerUrl();
-  const requestBody = buildRequest(prompt, { json });
+  const requestBody = buildRequest(prompt, { schema });
 
   // Chiamata al worker
 
@@ -53,22 +92,18 @@ async function callAI(prompt, { json = true } = {}) {
     const data = await response.json();
     // Response ricevuta
     
-    let content = data?.choices?.[0]?.message?.content || '';
-    if (!json) return content?.trim();
+    const content = (data?.choices?.[0]?.message?.content || '').trim();
+
+    // Prova a parsare JSON diretto o dentro code fence
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const payload = jsonMatch ? jsonMatch[1].trim() : content;
+
+    if (!schema) return payload;
 
     try {
-      // Estrai JSON da markdown code blocks se presente
-      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        content = jsonMatch[1].trim();
-        // JSON estratto da markdown
-      }
-
-      const parsed = JSON.parse(content);
-      // JSON parsato
-      return parsed;
+      return JSON.parse(payload);
     } catch (parseErr) {
-      console.error('[aiCoachService] JSON parse error:', parseErr, 'Content:', content);
+      console.error('[aiCoachService] JSON parse error:', parseErr, 'Content:', payload);
       throw new Error(`JSON parse error: ${parseErr.message}`);
     }
   } catch (fetchErr) {
@@ -164,7 +199,7 @@ Regole risposta JSON con chiavi: {
 Tono: tecnico, sintetico, italiano.`;
 
   try {
-    const data = await callAI(prompt, { json: true });
+    const data = await callAI(prompt, { schema: WEEKLY_INSIGHT_SCHEMA });
     return { success: true, data };
   } catch (error) {
     console.error('[AI Coach] insight error', error);
@@ -209,7 +244,7 @@ Rispondi in JSON: {
 Tono tecnico, italiano, sintetico (max 2 frasi per campo).`;
 
   try {
-    const data = await callAI(prompt, { json: true });
+    const data = await callAI(prompt, { schema: WHAT_IF_SCHEMA });
     return { success: true, data };
   } catch (error) {
     console.error('[AI Coach] what-if error', error);
@@ -246,7 +281,7 @@ Rispondi in JSON: {
 Tono tecnico, sintetico, italiano.`;
 
   try {
-    const data = await callAI(prompt, { json: true });
+    const data = await callAI(prompt, { schema: ADAPTIVE_SCHEMA });
     return { success: true, data };
   } catch (error) {
     console.error('[AI Coach] adaptive error', error);

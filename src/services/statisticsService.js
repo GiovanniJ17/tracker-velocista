@@ -3,13 +3,8 @@
  * Calcola metriche complesse per dashboard statistiche
  */
 
-import { createClient } from '@supabase/supabase-js';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getWeek, getYear, format } from 'date-fns';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from '../lib/supabase';
 
 /**
  * Recupera tutte le sessioni e i record (estratti dai workout_sets) per il periodo indicato

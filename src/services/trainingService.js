@@ -307,6 +307,21 @@ export async function getTrainingStats(startDate, endDate) {
     // Ottieni gli ID delle sessioni nel periodo
     const sessionIds = sessions.map(s => s.id);
 
+    if (sessionIds.length === 0) {
+      return {
+        success: true,
+        data: {
+          totalSessions: 0,
+          avgRPE: null,
+          typeDistribution: {},
+          totalDistanceKm: '0.00',
+          totalWeightKg: '0',
+          currentStreak: 0,
+          sessions: [],
+        },
+      };
+    }
+
     // Recupera i gruppi per queste sessioni
     const { data: groups, error: groupsError } = await supabase
       .from('workout_groups')

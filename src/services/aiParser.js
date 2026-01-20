@@ -492,10 +492,10 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
     requestBody.apiKey = devApiKey;
   }
   
-  // Worker URL
-  let workerUrl = 'http://localhost:5000'; // Local dev
-  if (import.meta.env.MODE === 'production') {
-    workerUrl = import.meta.env.VITE_WORKER_URL || 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
+  // Worker URL (env override also in dev)
+  let workerUrl = import.meta.env.VITE_WORKER_URL || 'http://localhost:5000';
+  if (!import.meta.env.VITE_WORKER_URL && import.meta.env.MODE === 'production') {
+    workerUrl = 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
   }
   
   const headers = { 'Content-Type': 'application/json' };
