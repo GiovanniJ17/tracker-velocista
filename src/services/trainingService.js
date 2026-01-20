@@ -105,19 +105,25 @@ async function insertTrainingSessionDirect(standardizedData) {
 
     // 3. Insert sets for this group
     if (group.sets && group.sets.length > 0) {
-      const setsToInsert = group.sets.map(set => ({
-        group_id: groupData.id,
-        exercise_name: set.exercise_name,
-        category: set.category,
-        sets: set.sets || null,
-        reps: set.reps || null,
-        weight_kg: set.weight_kg || null,
-        distance_m: set.distance_m || null,
-        time_s: set.time_s || null,
-        recovery_s: set.recovery_s || null,
-        details: set.details || null,
-        notes: set.notes || null,
-      }));
+      const setsToInsert = group.sets.map(set => {
+        const setData = {
+          group_id: groupData.id,
+          exercise_name: set.exercise_name || 'Esercizio',
+          category: set.category || 'other',
+        };
+        
+        // Only add numeric fields if they have valid values
+        if (set.sets != null && set.sets !== undefined) setData.sets = set.sets;
+        if (set.reps != null && set.reps !== undefined) setData.reps = set.reps;
+        if (set.weight_kg != null && set.weight_kg !== undefined) setData.weight_kg = set.weight_kg;
+        if (set.distance_m != null && set.distance_m !== undefined) setData.distance_m = set.distance_m;
+        if (set.time_s != null && set.time_s !== undefined) setData.time_s = set.time_s;
+        if (set.recovery_s != null && set.recovery_s !== undefined) setData.recovery_s = set.recovery_s;
+        if (set.notes) setData.notes = set.notes;
+        if (set.details && Object.keys(set.details).length > 0) setData.details = set.details;
+        
+        return setData;
+      });
 
       const { error: setsError } = await supabase
         .from('workout_sets')

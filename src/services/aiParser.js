@@ -833,7 +833,7 @@ function validateSingleSession(data) {
         time_s: null,
         recovery_s: null,
         notes: 'Contenuto estratto dal testo',
-        details: {}
+        details: null
       }]
     }];
   } else {
@@ -851,7 +851,7 @@ function validateSingleSession(data) {
           time_s: null,
           recovery_s: null,
           notes: null,
-          details: {}
+          details: null
         }];
       }
 
