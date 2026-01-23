@@ -1,142 +1,141 @@
-import { supabase } from '../lib/supabase';
-import { format } from 'date-fns';
-import { standardizeTrainingSession } from '../utils/standardizer.js';
 import {
-  addRaceRecord,
-  addTrainingRecord,
-  addStrengthRecord,
-  addInjury,
-} from './athleteService.js';
+  collection,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  documentId,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch
+} from 'firebase/firestore'
+import { format } from 'date-fns'
+import { firestore } from '../lib/firebase'
+import { standardizeTrainingSession } from '../utils/standardizer.js'
+// PB/Injury writes handled locally to avoid slow per-doc writes.
 
-/**
- * Saves a complete training session to database using atomic RPC transaction
- * Applies data standardization (exercise names, times, recovery durations) before saving
- * Uses Postgres stored procedure for ACID compliance - all or nothing insert
- * @param {Object} parsedData - Parsed training session object with session, groups, and sets
- * @returns {Promise<Object>} Saved session data with ID
- * @throws {Error} If database operation fails
- */
-async function insertTrainingSession(parsedData) {
-  const standardizedData = standardizeTrainingSession(parsedData);
+const BATCH_LIMIT = 450
+const COMMIT_TIMEOUT_MS = 20000
 
-  // Prepara i gruppi in formato JSON per la stored procedure
-  const groupsJson = standardizedData.groups.map(group => ({
-    order_index: group.order_index,
-    name: group.name,
-    notes: group.notes,
-    sets: group.sets // Array già standardizzato
-  }));
+function chunkArray(items, size) {
+  const chunks = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
-  try {
-    // Chiamata RPC atomica: O tutto o niente! 🛡️
-    // 1 sola chiamata di rete invece di N (sessione + gruppi + set)
-    // Se la connessione cade, il database fa rollback automatico
-    const { data: sessionId, error } = await supabase.rpc('insert_full_training_session', {
-      p_date: standardizedData.session.date,
-      p_title: standardizedData.session.title,
-      p_type: standardizedData.session.type,
-      p_location: standardizedData.session.location || null,
-      p_rpe: standardizedData.session.rpe || null,
-      p_feeling: standardizedData.session.feeling || null,
-      p_notes: standardizedData.session.notes || null,
-      p_groups: groupsJson
-    });
-
-    if (error) {
-      // Se RPC fallisce per stack depth, usa fallback con inserimenti diretti
-      if (error.message && error.message.includes('stack depth')) {
-        console.warn('RPC failed with stack depth error, using direct insert fallback');
-        return await insertTrainingSessionDirect(standardizedData);
+async function commitBatches(ops) {
+  const chunks = chunkArray(ops, BATCH_LIMIT)
+  for (const chunk of chunks) {
+    const batch = writeBatch(firestore)
+    chunk.forEach(({ ref, data }) => batch.set(ref, data))
+    console.log(`[trainingService] Committing batch (${chunk.length} writes)...`)
+    const commitPromise = batch.commit()
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Firestore batch commit timeout')), COMMIT_TIMEOUT_MS)
+    })
+    try {
+      await Promise.race([commitPromise, timeoutPromise])
+      console.log('[trainingService] Batch commit completed')
+    } catch (error) {
+      if (error?.message !== 'Firestore batch commit timeout') {
+        throw error
       }
-      throw error;
+      console.warn('[trainingService] Batch commit timed out, falling back to single writes')
+      for (const { ref, data } of chunk) {
+        console.log('[trainingService] Writing doc:', ref.path)
+        const writePromise = setDoc(ref, data)
+        const writeTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Firestore single write timeout')), COMMIT_TIMEOUT_MS)
+        })
+        await Promise.race([writePromise, writeTimeout])
+      }
+      console.log('[trainingService] Fallback single writes completed')
     }
-
-    return { success: true, sessionId: sessionId, sessionDate: standardizedData.session.date };
-  } catch (error) {
-    // Fallback a inserimento diretto se RPC fallisce
-    if (error.message && error.message.includes('stack depth')) {
-      console.warn('RPC failed, using direct insert fallback');
-      return await insertTrainingSessionDirect(standardizedData);
-    }
-    throw error;
   }
 }
 
-/**
- * Fallback method: Direct inserts instead of RPC (for complex sessions)
- * Still atomic thanks to Supabase client-side batching
- */
-async function insertTrainingSessionDirect(standardizedData) {
-  // 1. Insert main session
-  const { data: session, error: sessionError } = await supabase
-    .from('training_sessions')
-    .insert({
-      date: standardizedData.session.date,
-      title: standardizedData.session.title,
-      type: standardizedData.session.type,
-      location: standardizedData.session.location || null,
-      rpe: standardizedData.session.rpe || null,
-      feeling: standardizedData.session.feeling || null,
-      notes: standardizedData.session.notes || null,
+async function deleteBatches(refs) {
+  const chunks = chunkArray(refs, BATCH_LIMIT)
+  for (const chunk of chunks) {
+    const batch = writeBatch(firestore)
+    chunk.forEach((ref) => batch.delete(ref))
+    const commitPromise = batch.commit()
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Firestore batch delete timeout')), COMMIT_TIMEOUT_MS)
     })
-    .select('id')
-    .single();
+    await Promise.race([commitPromise, timeoutPromise])
+  }
+}
 
-  if (sessionError) throw sessionError;
+async function insertTrainingSession(parsedData) {
+  const standardizedData = standardizeTrainingSession(parsedData)
 
-  // 2. Insert groups and sets
-  for (const group of standardizedData.groups) {
-    const { data: groupData, error: groupError } = await supabase
-      .from('workout_groups')
-      .insert({
-        session_id: session.id,
-        order_index: group.order_index,
-        name: group.name,
-        notes: group.notes,
-      })
-      .select('id')
-      .single();
+  const sessionRef = doc(collection(firestore, 'training_sessions'))
+  const now = new Date().toISOString()
+  const sessionPayload = {
+    date: standardizedData.session.date,
+    title: standardizedData.session.title,
+    type: standardizedData.session.type,
+    location: standardizedData.session.location || null,
+    rpe: standardizedData.session.rpe ?? null,
+    feeling: standardizedData.session.feeling || null,
+    notes: standardizedData.session.notes || null,
+    created_at: now,
+    updated_at: now
+  }
 
-    if (groupError) {
-      // Cleanup: delete session if group insert fails
-      await supabase.from('training_sessions').delete().eq('id', session.id);
-      throw groupError;
+  const ops = [{ ref: sessionRef, data: sessionPayload }]
+
+  for (const group of standardizedData.groups || []) {
+    const groupRef = doc(collection(sessionRef, 'workout_groups'))
+    const groupPayload = {
+      session_id: sessionRef.id,
+      session_date: standardizedData.session.date,
+      session_type: standardizedData.session.type,
+      name: group.name,
+      order_index: group.order_index,
+      notes: group.notes || null,
+      created_at: now,
+      updated_at: now
     }
+    ops.push({ ref: groupRef, data: groupPayload })
 
-    // 3. Insert sets for this group ONE BY ONE to avoid stack depth issues
-    if (group.sets && group.sets.length > 0) {
-      for (const set of group.sets) {
-        const setData = {
-          group_id: groupData.id,
-          exercise_name: set.exercise_name || 'Esercizio',
-          category: set.category || 'other',
-        };
-        
-        // Only add numeric fields if they have valid values
-        if (set.sets != null && set.sets !== undefined) setData.sets = set.sets;
-        if (set.reps != null && set.reps !== undefined) setData.reps = set.reps;
-        if (set.weight_kg != null && set.weight_kg !== undefined) setData.weight_kg = set.weight_kg;
-        if (set.distance_m != null && set.distance_m !== undefined) setData.distance_m = set.distance_m;
-        if (set.time_s != null && set.time_s !== undefined) setData.time_s = set.time_s;
-        if (set.recovery_s != null && set.recovery_s !== undefined) setData.recovery_s = set.recovery_s;
-        if (set.notes) setData.notes = set.notes;
-        if (set.details && Object.keys(set.details).length > 0) setData.details = set.details;
-
-        const { error: setError } = await supabase
-          .from('workout_sets')
-          .insert(setData);
-
-        if (setError) {
-          console.error('Error inserting set:', setError);
-          // Cleanup: delete session (cascade will delete groups and sets)
-          await supabase.from('training_sessions').delete().eq('id', session.id);
-          throw setError;
-        }
+    for (const set of group.sets || []) {
+      const setRef = doc(collection(groupRef, 'workout_sets'))
+      const setPayload = {
+        session_id: sessionRef.id,
+        session_date: standardizedData.session.date,
+        session_type: standardizedData.session.type,
+        group_id: groupRef.id,
+        group_name: group.name,
+        exercise_name: set.exercise_name || 'Esercizio',
+        category: set.category || 'other',
+        sets: set.sets ?? null,
+        reps: set.reps ?? null,
+        weight_kg: set.weight_kg ?? null,
+        distance_m: set.distance_m ?? null,
+        time_s: set.time_s ?? null,
+        recovery_s: set.recovery_s ?? null,
+        notes: set.notes || null,
+        details: set.details || null,
+        is_personal_best: set.is_personal_best || false,
+        created_at: now,
+        updated_at: now
       }
+      ops.push({ ref: setRef, data: setPayload })
     }
   }
 
-  return { success: true, sessionId: session.id, sessionDate: standardizedData.session.date };
+  await commitBatches(ops)
+
+  return { success: true, sessionId: sessionRef.id, sessionDate: standardizedData.session.date }
 }
 
 /**
@@ -145,67 +144,91 @@ async function insertTrainingSessionDirect(standardizedData) {
  */
 async function saveExtractedRecords(sessionId, sessionDate, personalBests = [], injuries = []) {
   try {
-    // Salva i Personal Bests senza verifiche preventive - il flag is_personal_best
-    // verrà determinato dalle funzioni addXRecord che possono farlo in modo più efficiente
-    for (const pb of personalBests) {
-      try {
-        if (pb.type === 'race') {
-          await addRaceRecord(sessionId, {
-            distance_m: pb.distance_m,
-            time_s: pb.time_s,
-            is_personal_best: true, // Assumi PB, verrà verificato/aggiornato se necessario
-            notes: pb.notes || null,
-          });
-        } else if (pb.type === 'training') {
-          const exerciseType = pb.exercise_type || 'sprint';
-          const performanceUnit = pb.performance_unit || 'seconds';
+    console.log('[trainingService] Saving extracted records...', {
+      personalBestsCount: personalBests.length,
+      injuriesCount: injuries.length
+    })
+    const now = new Date().toISOString()
+    const ops = []
 
-          await addTrainingRecord(sessionId, {
-            exercise_name: pb.exercise_name,
-            exercise_type: exerciseType,
-            performance_value: pb.performance_value,
-            performance_unit: performanceUnit,
-            rpe: pb.rpe || null,
+    for (const pb of personalBests) {
+      if (pb.type === 'race') {
+        const ref = doc(collection(firestore, 'race_records'))
+        ops.push({
+          ref,
+          data: {
+            session_id: sessionId,
+            distance_m: pb.distance_m ?? null,
+            time_s: pb.time_s ?? null,
+            is_personal_best: true,
+            notes: pb.notes || null,
+            date: sessionDate || null,
+            created_at: now
+          }
+        })
+      } else if (pb.type === 'training') {
+        const ref = doc(collection(firestore, 'training_records'))
+        ops.push({
+          ref,
+          data: {
+            session_id: sessionId,
+            exercise_name: pb.exercise_name || null,
+            exercise_type: pb.exercise_type || 'sprint',
+            performance_value: pb.performance_value ?? null,
+            performance_unit: pb.performance_unit || 'seconds',
+            rpe: pb.rpe ?? null,
             notes: pb.notes || null,
             is_personal_best: true,
-          });
-        } else if (pb.type === 'strength') {
-          await addStrengthRecord(sessionId, {
-            exercise_name: pb.exercise_name,
-            category: pb.category,
-            weight_kg: pb.weight_kg,
+            date: sessionDate || null,
+            created_at: now
+          }
+        })
+      } else if (pb.type === 'strength') {
+        const ref = doc(collection(firestore, 'strength_records'))
+        ops.push({
+          ref,
+          data: {
+            session_id: sessionId,
+            exercise_name: pb.exercise_name || null,
+            category: pb.category || null,
+            weight_kg: pb.weight_kg ?? null,
             reps: pb.reps || 1,
             notes: pb.notes || null,
             is_personal_best: true,
-          });
-        }
-      } catch (pbError) {
-        console.warn(`[saveExtractedRecords] Errore nel salvataggio PB (${pb.type}):`, pbError);
-        // Continua con gli altri PB anche se uno fallisce
+            date: sessionDate || null,
+            created_at: now
+          }
+        })
       }
     }
 
-    // Salva gli infortuni
     for (const injury of injuries) {
-      try {
-        await addInjury({
+      const ref = doc(collection(firestore, 'injury_history'))
+      ops.push({
+        ref,
+        data: {
           injury_type: injury.injury_type,
           body_part: injury.body_part,
           start_date: sessionDate || new Date().toISOString().split('T')[0],
+          end_date: injury.end_date || null,
           severity: injury.severity,
           cause_session_id: sessionId,
-        });
-      } catch (injuryError) {
-        console.warn(`Errore nel salvataggio infortunio (${injury.body_part}):`, injuryError);
-        // Continua comunque con gli altri infortuni
-      }
+          notes: injury.notes || null,
+          created_at: now,
+          updated_at: now
+        }
+      })
     }
 
-    return { success: true };
+    if (ops.length > 0) {
+      await commitBatches(ops)
+    }
+
+    return { success: true }
   } catch (error) {
-    console.warn('Errore nel salvataggio record estratti:', error);
+    console.warn('Errore nel salvataggio record estratti:', error)
     // Non fallire il salvataggio della sessione se fallisce il salvataggio dei record
-    return { success: false, error: error.message };
+    return { success: false, error: error.message }
   }
 }
 
@@ -214,10 +237,10 @@ async function saveExtractedRecords(sessionId, sessionDate, personalBests = [], 
  */
 export async function saveTrainingSession(parsedData) {
   try {
-    return await insertTrainingSession(parsedData);
+    return await insertTrainingSession(parsedData)
   } catch (error) {
-    console.error('Errore nel salvataggio:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel salvataggio:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -226,14 +249,12 @@ export async function saveTrainingSession(parsedData) {
  * Estrae e salva anche automaticamente PB e infortuni
  */
 export async function saveTrainingSessions(parsedPayload) {
-  const sessions = Array.isArray(parsedPayload.sessions)
-    ? parsedPayload.sessions
-    : [parsedPayload];
+  const sessions = Array.isArray(parsedPayload.sessions) ? parsedPayload.sessions : [parsedPayload]
 
-  const personalBests = parsedPayload.personalBests || [];
-  const injuries = parsedPayload.injuries || [];
+  const personalBests = parsedPayload.personalBests || []
+  const injuries = parsedPayload.injuries || []
 
-  const savedIds = [];
+  const savedIds = []
 
   for (const [idx, session] of sessions.entries()) {
     try {
@@ -242,30 +263,39 @@ export async function saveTrainingSessions(parsedPayload) {
         date: session.session?.date,
         title: session.session?.title,
         groupsCount: session.groups?.length
-      });
+      })
 
-      const result = await insertTrainingSession(session);
+      const result = await insertTrainingSession(session)
       if (!result.success) {
-        const errorMsg = `Sessione ${idx + 1}: ${result.error || 'Errore sconosciuto'}`;
-        console.error(errorMsg);
-        return { success: false, error: errorMsg, savedIds };
+        const errorMsg = `Sessione ${idx + 1}: ${result.error || 'Errore sconosciuto'}`
+        console.error(errorMsg)
+        return { success: false, error: errorMsg, savedIds }
       }
-      savedIds.push(result.sessionId);
+      savedIds.push(result.sessionId)
 
       // Salva i PB e infortuni solo per la prima sessione per evitare duplicati
       if (idx === 0 && (personalBests.length > 0 || injuries.length > 0)) {
-        console.log(`Salvataggio PB/infortuni per sessione ${idx + 1}`);
-        await saveExtractedRecords(result.sessionId, result.sessionDate, personalBests, injuries);
+        console.log(`Salvataggio PB/infortuni per sessione ${idx + 1}`)
+        const recordsPromise = saveExtractedRecords(
+          result.sessionId,
+          result.sessionDate,
+          personalBests,
+          injuries
+        )
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout salvataggio PB/infortuni')), COMMIT_TIMEOUT_MS)
+        })
+        await Promise.race([recordsPromise, timeoutPromise])
       }
     } catch (error) {
-      console.error('Errore nel salvataggio multi-sessione:', error);
-      const errorMsg = error.message || 'Errore sconosciuto';
-      
-      return { success: false, error: `Sessione ${idx + 1}: ${errorMsg}`, savedIds };
+      console.error('Errore nel salvataggio multi-sessione:', error)
+      const errorMsg = error.message || 'Errore sconosciuto'
+
+      return { success: false, error: `Sessione ${idx + 1}: ${errorMsg}`, savedIds }
     }
   }
 
-  return { success: true, sessionIds: savedIds };
+  return { success: true, sessionIds: savedIds }
 }
 
 /**
@@ -273,17 +303,15 @@ export async function saveTrainingSessions(parsedPayload) {
  */
 export async function getTrainingSessions(limit = 50, offset = 0) {
   try {
-    const { data, error } = await supabase
-      .from('training_sessions')
-      .select('*')
-      .order('date', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) throw error;
-    return { success: true, data };
+    const sessionRef = collection(firestore, 'training_sessions')
+    const q = query(sessionRef, orderBy('date', 'desc'), limit(limit + offset))
+    const snapshot = await getDocs(q)
+    const items = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+    const sliced = items.slice(offset, offset + limit)
+    return { success: true, data: sliced }
   } catch (error) {
-    console.error('Errore nel recupero sessioni:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero sessioni:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -292,48 +320,38 @@ export async function getTrainingSessions(limit = 50, offset = 0) {
  */
 export async function getSessionDetails(sessionId) {
   try {
-    // Recupera la sessione
-    const { data: session, error: sessionError } = await supabase
-      .from('training_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
+    const sessionRef = doc(firestore, 'training_sessions', sessionId)
+    const sessionSnap = await getDoc(sessionRef)
+    if (!sessionSnap.exists()) {
+      return { success: false, error: 'Sessione non trovata' }
+    }
 
-    if (sessionError) throw sessionError;
+    const groupsQuery = query(
+      collection(sessionRef, 'workout_groups'),
+      orderBy('order_index', 'asc')
+    )
+    const groupsSnap = await getDocs(groupsQuery)
 
-    // Recupera i gruppi
-    const { data: groups, error: groupsError } = await supabase
-      .from('workout_groups')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('order_index', { ascending: true });
-
-    if (groupsError) throw groupsError;
-
-    // Per ogni gruppo, recupera i set
     const groupsWithSets = await Promise.all(
-      groups.map(async (group) => {
-        const { data: sets, error: setsError } = await supabase
-          .from('workout_sets')
-          .select('*')
-          .eq('group_id', group.id);
-
-        if (setsError) throw setsError;
-
-        return { ...group, sets };
+      groupsSnap.docs.map(async (groupDoc) => {
+        const groupData = { id: groupDoc.id, ...groupDoc.data() }
+        const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+        const sets = setsSnap.docs.map((setDoc) => ({ id: setDoc.id, ...setDoc.data() }))
+        return { ...groupData, sets }
       })
-    );
+    )
 
     return {
       success: true,
       data: {
-        ...session,
-        groups: groupsWithSets,
-      },
-    };
+        id: sessionSnap.id,
+        ...sessionSnap.data(),
+        groups: groupsWithSets
+      }
+    }
   } catch (error) {
-    console.error('Errore nel recupero dettagli:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero dettagli:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -342,16 +360,47 @@ export async function getSessionDetails(sessionId) {
  */
 export async function deleteTrainingSession(sessionId) {
   try {
-    const { error } = await supabase
-      .from('training_sessions')
-      .delete()
-      .eq('id', sessionId);
+    const sessionRef = doc(firestore, 'training_sessions', sessionId)
+    const groupsSnap = await getDocs(collection(sessionRef, 'workout_groups'))
+    const ops = []
+    for (const groupDoc of groupsSnap.docs) {
+      const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+      setsSnap.docs.forEach((setDoc) => ops.push({ ref: setDoc.ref, data: null }))
+      ops.push({ ref: groupDoc.ref, data: null })
+    }
+    if (ops.length) {
+      await deleteBatches(ops.map(({ ref }) => ref))
+    }
+    await deleteDoc(sessionRef)
 
-    if (error) throw error;
-    return { success: true };
+    // Clean derived records linked to this session
+    const raceSnap = await getDocs(
+      query(collection(firestore, 'race_records'), where('session_id', '==', sessionId))
+    )
+    const trainingSnap = await getDocs(
+      query(collection(firestore, 'training_records'), where('session_id', '==', sessionId))
+    )
+    const strengthSnap = await getDocs(
+      query(collection(firestore, 'strength_records'), where('session_id', '==', sessionId))
+    )
+    const injurySnap = await getDocs(
+      query(collection(firestore, 'injury_history'), where('cause_session_id', '==', sessionId))
+    )
+
+    const relatedRefs = [
+      ...raceSnap.docs.map((docSnap) => docSnap.ref),
+      ...trainingSnap.docs.map((docSnap) => docSnap.ref),
+      ...strengthSnap.docs.map((docSnap) => docSnap.ref),
+      ...injurySnap.docs.map((docSnap) => docSnap.ref)
+    ]
+    if (relatedRefs.length) {
+      await deleteBatches(relatedRefs)
+    }
+
+    return { success: true }
   } catch (error) {
-    console.error('Errore nell\'eliminazione:', error);
-    return { success: false, error: error.message };
+    console.error("Errore nell'eliminazione:", error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -360,24 +409,18 @@ export async function deleteTrainingSession(sessionId) {
  */
 export async function getTrainingStats(startDate, endDate) {
   try {
-    // Recupera sessioni nel periodo
-    let sessionQuery = supabase
-      .from('training_sessions')
-      .select('*')
-      .order('date', { ascending: true });
-
+    let sessionQuery = query(collection(firestore, 'training_sessions'), orderBy('date', 'asc'))
     if (startDate) {
-      sessionQuery = sessionQuery.gte('date', startDate);
+      sessionQuery = query(sessionQuery, where('date', '>=', startDate))
     }
     if (endDate) {
-      sessionQuery = sessionQuery.lte('date', endDate);
+      sessionQuery = query(sessionQuery, where('date', '<=', endDate))
     }
-
-    const { data: sessions, error } = await sessionQuery;
-    if (error) throw error;
+    const sessionSnap = await getDocs(sessionQuery)
+    const sessions = sessionSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
 
     // Ottieni gli ID delle sessioni nel periodo
-    const sessionIds = sessions.map(s => s.id);
+    const sessionIds = sessions.map((s) => s.id)
 
     if (sessionIds.length === 0) {
       return {
@@ -389,62 +432,56 @@ export async function getTrainingStats(startDate, endDate) {
           totalDistanceKm: '0.00',
           totalWeightKg: '0',
           currentStreak: 0,
-          sessions: [],
-        },
-      };
+          sessions: []
+        }
+      }
     }
 
     // Recupera i gruppi per queste sessioni
-    const { data: groups, error: groupsError } = await supabase
-      .from('workout_groups')
-      .select('id, session_id')
-      .in('session_id', sessionIds);
-    
-    if (groupsError) throw groupsError;
-
-    const groupIds = groups.map(g => g.id);
-
-    // Recupera i sets per questi gruppi
-    const { data: sets, error: setsError } = await supabase
-      .from('workout_sets')
-      .select('*')
-      .in('group_id', groupIds);
-    
-    if (setsError) throw setsError;
+    const sets = []
+    for (const session of sessions) {
+      const sessionRef = doc(firestore, 'training_sessions', session.id)
+      const groupsSnap = await getDocs(collection(sessionRef, 'workout_groups'))
+      for (const groupDoc of groupsSnap.docs) {
+        const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+        setsSnap.docs.forEach((setDoc) => {
+          sets.push({ id: setDoc.id, ...setDoc.data() })
+        })
+      }
+    }
 
     // Calcola statistiche base
-    const totalSessions = sessions.length;
-    
+    const totalSessions = sessions.length
+
     // RPE medio (solo sessioni con RPE)
-    const sessionsWithRPE = sessions.filter(s => s.rpe !== null && s.rpe !== undefined);
-    const avgRPE = sessionsWithRPE.length > 0
-      ? (sessionsWithRPE.reduce((sum, s) => sum + s.rpe, 0) / sessionsWithRPE.length)
-      : null;
+    const sessionsWithRPE = sessions.filter((s) => s.rpe !== null && s.rpe !== undefined)
+    const avgRPE =
+      sessionsWithRPE.length > 0
+        ? sessionsWithRPE.reduce((sum, s) => sum + s.rpe, 0) / sessionsWithRPE.length
+        : null
 
     // Distribuzione tipi
     const typeDistribution = sessions.reduce((acc, s) => {
-      acc[s.type] = (acc[s.type] || 0) + 1;
-      return acc;
-    }, {});
+      acc[s.type] = (acc[s.type] || 0) + 1
+      return acc
+    }, {})
 
     // Volume totale distanza (somma distance_m * sets)
     const totalDistance = sets
-      .filter(s => s.distance_m)
-      .reduce((sum, s) => sum + (s.distance_m * (s.sets || 1)), 0);
-    
+      .filter((s) => s.distance_m)
+      .reduce((sum, s) => sum + s.distance_m * (s.sets || 1), 0)
+
     // Volume totale peso (somma weight_kg * reps * sets)
     const totalWeight = sets
-      .filter(s => s.weight_kg && s.reps)
-      .reduce((sum, s) => sum + (s.weight_kg * s.reps * (s.sets || 1)), 0);
+      .filter((s) => s.weight_kg && s.reps)
+      .reduce((sum, s) => sum + s.weight_kg * s.reps * (s.sets || 1), 0)
 
     // Calcola streak (giorni consecutivi) - usa TUTTE le sessioni non solo quelle filtrate
-    const { data: allSessions, error: allError } = await supabase
-      .from('training_sessions')
-      .select('date')
-      .order('date', { ascending: false });
-    
-    if (allError) throw allError;
-    const streak = calculateStreak(allSessions);
+    const allSnap = await getDocs(
+      query(collection(firestore, 'training_sessions'), orderBy('date', 'desc'))
+    )
+    const allSessions = allSnap.docs.map((docSnap) => docSnap.data())
+    const streak = calculateStreak(allSessions)
 
     return {
       success: true,
@@ -455,12 +492,12 @@ export async function getTrainingStats(startDate, endDate) {
         totalDistanceKm: (totalDistance / 1000).toFixed(2),
         totalWeightKg: totalWeight.toFixed(0),
         currentStreak: streak,
-        sessions,
-      },
-    };
+        sessions
+      }
+    }
   } catch (error) {
-    console.error('Errore nel recupero statistiche:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero statistiche:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -468,42 +505,42 @@ export async function getTrainingStats(startDate, endDate) {
  * Calcola streak di allenamenti consecutivi
  */
 function calculateStreak(sessions) {
-  if (sessions.length === 0) return 0;
-  
+  if (sessions.length === 0) return 0
+
   // Ottieni le date uniche (possono esserci più sessioni nello stesso giorno)
-  const uniqueDates = [...new Set(sessions.map(s => s.date))].sort((a, b) => 
-    new Date(b).getTime() - new Date(a).getTime()
-  );
-  
-  if (uniqueDates.length === 0) return 0;
-  
+  const uniqueDates = [...new Set(sessions.map((s) => s.date))].sort(
+    (a, b) => new Date(b).getTime() - new Date(a).getTime()
+  )
+
+  if (uniqueDates.length === 0) return 0
+
   // Trova la data più recente nel database
-  const mostRecentDate = new Date(uniqueDates[0]);
-  mostRecentDate.setHours(0, 0, 0, 0);
-  
-  let streak = 1; // Conta la prima data
-  let currentDate = new Date(mostRecentDate);
-  
+  const mostRecentDate = new Date(uniqueDates[0])
+  mostRecentDate.setHours(0, 0, 0, 0)
+
+  let streak = 1 // Conta la prima data
+  let currentDate = new Date(mostRecentDate)
+
   // Conta all'indietro le date consecutive
   for (let i = 1; i < uniqueDates.length; i++) {
-    const prevDate = new Date(uniqueDates[i]);
-    prevDate.setHours(0, 0, 0, 0);
-    
+    const prevDate = new Date(uniqueDates[i])
+    prevDate.setHours(0, 0, 0, 0)
+
     // Calcola la data attesa (giorno precedente)
-    const expectedDate = new Date(currentDate);
-    expectedDate.setDate(expectedDate.getDate() - 1);
-    
+    const expectedDate = new Date(currentDate)
+    expectedDate.setDate(expectedDate.getDate() - 1)
+
     // Verifica se è consecutiva
     if (prevDate.getTime() === expectedDate.getTime()) {
-      streak++;
-      currentDate = new Date(prevDate);
+      streak++
+      currentDate = new Date(prevDate)
     } else {
       // Interrompi se non consecutiva
-      break;
+      break
     }
   }
-  
-  return streak;
+
+  return streak
 }
 
 /**
@@ -511,19 +548,16 @@ function calculateStreak(sessions) {
  */
 export async function getSessionsByDate(date) {
   try {
-    const dateStr = date instanceof Date ? format(date, 'yyyy-MM-dd') : date;
-    
-    const { data: sessions, error } = await supabase
-      .from('training_sessions')
-      .select('*')
-      .eq('date', dateStr)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return { success: true, data: sessions };
+    const dateStr = date instanceof Date ? format(date, 'yyyy-MM-dd') : date
+    const q = query(collection(firestore, 'training_sessions'), where('date', '==', dateStr))
+    const snapshot = await getDocs(q)
+    const sessions = snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    return { success: true, data: sessions }
   } catch (error) {
-    console.error('Errore nel recupero sessioni per data:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero sessioni per data:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -532,31 +566,31 @@ export async function getSessionsByDate(date) {
  */
 export async function getSessionsForMonth(year, month) {
   try {
-    const startDate = format(new Date(year, month, 1), 'yyyy-MM-dd');
-    const endDate = format(new Date(year, month + 1, 0), 'yyyy-MM-dd');
+    const startDate = format(new Date(year, month, 1), 'yyyy-MM-dd')
+    const endDate = format(new Date(year, month + 1, 0), 'yyyy-MM-dd')
+    const q = query(
+      collection(firestore, 'training_sessions'),
+      where('date', '>=', startDate),
+      where('date', '<=', endDate)
+    )
+    const snapshot = await getDocs(q)
+    const sessions = snapshot.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
 
-    const { data: sessions, error } = await supabase
-      .from('training_sessions')
-      .select('id, date, type, title, rpe')
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true });
-
-    if (error) throw error;
-    
     // Organizza per data
-    const sessionsByDate = {};
-    sessions.forEach(session => {
+    const sessionsByDate = {}
+    sessions.forEach((session) => {
       if (!sessionsByDate[session.date]) {
-        sessionsByDate[session.date] = [];
+        sessionsByDate[session.date] = []
       }
-      sessionsByDate[session.date].push(session);
-    });
+      sessionsByDate[session.date].push(session)
+    })
 
-    return { success: true, data: sessionsByDate };
+    return { success: true, data: sessionsByDate }
   } catch (error) {
-    console.error('Errore nel recupero sessioni per mese:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero sessioni per mese:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -565,25 +599,22 @@ export async function getSessionsForMonth(year, month) {
  */
 export async function updateTrainingSession(sessionId, updates) {
   try {
-    const { data, error } = await supabase
-      .from('training_sessions')
-      .update({
-        title: updates.title !== undefined ? updates.title : undefined,
-        type: updates.type !== undefined ? updates.type : undefined,
-        location: updates.location !== undefined ? updates.location : undefined,
-        rpe: updates.rpe !== undefined ? updates.rpe : undefined,
-        feeling: updates.feeling !== undefined ? updates.feeling : undefined,
-        notes: updates.notes !== undefined ? updates.notes : undefined,
-      })
-      .eq('id', sessionId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
+    const sessionRef = doc(firestore, 'training_sessions', sessionId)
+    const payload = {
+      updated_at: new Date().toISOString()
+    }
+    if (updates.title !== undefined) payload.title = updates.title
+    if (updates.type !== undefined) payload.type = updates.type
+    if (updates.location !== undefined) payload.location = updates.location
+    if (updates.rpe !== undefined) payload.rpe = updates.rpe
+    if (updates.feeling !== undefined) payload.feeling = updates.feeling
+    if (updates.notes !== undefined) payload.notes = updates.notes
+    await updateDoc(sessionRef, payload)
+    const snap = await getDoc(sessionRef)
+    return { success: true, data: { id: snap.id, ...snap.data() } }
   } catch (error) {
-    console.error('Errore nell\'aggiornamento sessione:', error);
-    return { success: false, error: error.message };
+    console.error("Errore nell'aggiornamento sessione:", error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -592,31 +623,32 @@ export async function updateTrainingSession(sessionId, updates) {
  */
 export async function updateWorkoutSet(setId, updates) {
   try {
-    const updateObj = {};
-    
-    if (updates.exercise_name !== undefined) updateObj.exercise_name = updates.exercise_name;
-    if (updates.category !== undefined) updateObj.category = updates.category;
-    if (updates.sets !== undefined) updateObj.sets = updates.sets;
-    if (updates.reps !== undefined) updateObj.reps = updates.reps;
-    if (updates.weight_kg !== undefined) updateObj.weight_kg = updates.weight_kg;
-    if (updates.distance_m !== undefined) updateObj.distance_m = updates.distance_m;
-    if (updates.time_s !== undefined) updateObj.time_s = updates.time_s;
-    if (updates.recovery_s !== undefined) updateObj.recovery_s = updates.recovery_s;
-    if (updates.notes !== undefined) updateObj.notes = updates.notes;
-    if (updates.details !== undefined) updateObj.details = updates.details;
-
-    const { data, error } = await supabase
-      .from('workout_sets')
-      .update(updateObj)
-      .eq('id', setId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
+    const q = query(
+      collectionGroup(firestore, 'workout_sets'),
+      where(documentId(), '==', setId),
+      limit(1)
+    )
+    const snap = await getDocs(q)
+    if (snap.empty) return { success: false, error: 'Set non trovato' }
+    const ref = snap.docs[0].ref
+    const updateObj = {}
+    if (updates.exercise_name !== undefined) updateObj.exercise_name = updates.exercise_name
+    if (updates.category !== undefined) updateObj.category = updates.category
+    if (updates.sets !== undefined) updateObj.sets = updates.sets
+    if (updates.reps !== undefined) updateObj.reps = updates.reps
+    if (updates.weight_kg !== undefined) updateObj.weight_kg = updates.weight_kg
+    if (updates.distance_m !== undefined) updateObj.distance_m = updates.distance_m
+    if (updates.time_s !== undefined) updateObj.time_s = updates.time_s
+    if (updates.recovery_s !== undefined) updateObj.recovery_s = updates.recovery_s
+    if (updates.notes !== undefined) updateObj.notes = updates.notes
+    if (updates.details !== undefined) updateObj.details = updates.details
+    updateObj.updated_at = new Date().toISOString()
+    await updateDoc(ref, updateObj)
+    const docSnap = await getDoc(ref)
+    return { success: true, data: { id: docSnap.id, ...docSnap.data() } }
   } catch (error) {
-    console.error('Errore nell\'aggiornamento esercizio:', error);
-    return { success: false, error: error.message };
+    console.error("Errore nell'aggiornamento esercizio:", error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -625,21 +657,23 @@ export async function updateWorkoutSet(setId, updates) {
  */
 export async function updateWorkoutGroup(groupId, updates) {
   try {
-    const { data, error } = await supabase
-      .from('workout_groups')
-      .update({
-        name: updates.name !== undefined ? updates.name : undefined,
-        notes: updates.notes !== undefined ? updates.notes : undefined,
-        order_index: updates.order_index !== undefined ? updates.order_index : undefined,
-      })
-      .eq('id', groupId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
+    const q = query(
+      collectionGroup(firestore, 'workout_groups'),
+      where(documentId(), '==', groupId),
+      limit(1)
+    )
+    const snap = await getDocs(q)
+    if (snap.empty) return { success: false, error: 'Gruppo non trovato' }
+    const ref = snap.docs[0].ref
+    const payload = { updated_at: new Date().toISOString() }
+    if (updates.name !== undefined) payload.name = updates.name
+    if (updates.notes !== undefined) payload.notes = updates.notes
+    if (updates.order_index !== undefined) payload.order_index = updates.order_index
+    await updateDoc(ref, payload)
+    const docSnap = await getDoc(ref)
+    return { success: true, data: { id: docSnap.id, ...docSnap.data() } }
   } catch (error) {
-    console.error('Errore nell\'aggiornamento gruppo:', error);
-    return { success: false, error: error.message };
+    console.error("Errore nell'aggiornamento gruppo:", error)
+    return { success: false, error: error.message }
   }
 }

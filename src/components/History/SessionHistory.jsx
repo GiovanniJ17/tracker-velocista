@@ -1,87 +1,84 @@
-import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { it } from 'date-fns/locale';
-import SessionCalendar from './SessionCalendar';
-import SessionDetail from './SessionDetail';
-import { getSessionsForMonth, getSessionsByDate, getSessionDetails, deleteTrainingSession } from '../../services/trainingService';
+import { useState, useEffect, useCallback } from 'react'
+import { format } from 'date-fns'
+import SessionCalendar from './SessionCalendar'
+import SessionDetail from './SessionDetail'
+import {
+  getSessionsForMonth,
+  getSessionsByDate,
+  getSessionDetails,
+  deleteTrainingSession
+} from '../../services/trainingService'
 
 export default function SessionHistory() {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [sessionsByDate, setSessionsByDate] = useState({});
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedSessions, setSelectedSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [sessionsByDate, setSessionsByDate] = useState({})
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [selectedSessions, setSelectedSessions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  const loadMonthData = useCallback(async () => {
+    setLoading(true)
+    const result = await getSessionsForMonth(currentMonth.getFullYear(), currentMonth.getMonth())
+    if (result.success) {
+      setSessionsByDate(result.data)
+    }
+    setLoading(false)
+  }, [currentMonth])
 
   useEffect(() => {
-    loadMonthData();
-  }, [currentMonth]);
-
-  const loadMonthData = async () => {
-    setLoading(true);
-    const result = await getSessionsForMonth(currentMonth.getFullYear(), currentMonth.getMonth());
-    if (result.success) {
-      setSessionsByDate(result.data);
-    }
-    setLoading(false);
-  };
+    loadMonthData()
+  }, [loadMonthData])
 
   const handleDateClick = async (date) => {
-    setSelectedDate(date);
-    const dateStr = format(date, 'yyyy-MM-dd');
+    setSelectedDate(date)
+    const dateStr = format(date, 'yyyy-MM-dd')
     try {
-      const result = await getSessionsByDate(dateStr);
+      const result = await getSessionsByDate(dateStr)
       if (result.success) {
         const detailed = await Promise.all(
           result.data.map(async (session) => {
-            const detailRes = await getSessionDetails(session.id);
-            return detailRes.success ? detailRes.data : session;
+            const detailRes = await getSessionDetails(session.id)
+            return detailRes.success ? detailRes.data : session
           })
-        );
-        setSelectedSessions(detailed);
+        )
+        setSelectedSessions(detailed)
       } else {
-        setSelectedSessions([]);
-        console.warn('Impossibile caricare le sessioni per la data', dateStr, result.error);
+        setSelectedSessions([])
+        console.warn('Impossibile caricare le sessioni per la data', dateStr, result.error)
       }
     } catch (err) {
-      console.warn('Errore nel caricamento dettagli data', err);
-      setSelectedSessions([]);
+      console.warn('Errore nel caricamento dettagli data', err)
+      setSelectedSessions([])
     }
-  };
+  }
 
   const handleDeleteClick = (sessionId) => {
-    setDeleteConfirm(sessionId);
-  };
+    setDeleteConfirm(sessionId)
+  }
 
   const handleConfirmDelete = async () => {
-    if (!deleteConfirm) return;
-    
-    const result = await deleteTrainingSession(deleteConfirm);
+    if (!deleteConfirm) return
+
+    const result = await deleteTrainingSession(deleteConfirm)
     if (result.success) {
       // Ricarica il mese
-      await loadMonthData();
+      await loadMonthData()
       // Se era selezionata, aggiorna
       if (selectedDate) {
-        await handleDateClick(selectedDate);
+        await handleDateClick(selectedDate)
       }
-      setDeleteConfirm(null);
+      setDeleteConfirm(null)
     }
-  };
-
-  const handleSaveEditor = async () => {
-    await loadMonthData();
-    if (selectedDate) {
-      await handleDateClick(selectedDate);
-    }
-  };
+  }
 
   const prevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
-  };
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
+  }
 
   const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
-  };
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-6">
@@ -112,7 +109,9 @@ export default function SessionHistory() {
 
           {!selectedDate && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center">
-              <p className="text-gray-400">Seleziona un giorno nel calendario per visualizzare le sessioni</p>
+              <p className="text-gray-400">
+                Seleziona un giorno nel calendario per visualizzare le sessioni
+              </p>
             </div>
           )}
         </div>
@@ -123,7 +122,9 @@ export default function SessionHistory() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-sm">
             <h3 className="text-lg font-bold text-white mb-4">Elimina Sessione</h3>
-            <p className="text-gray-300 mb-6">Sei sicuro? Questa azione non può essere annullata.</p>
+            <p className="text-gray-300 mb-6">
+              Sei sicuro? Questa azione non può essere annullata.
+            </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setDeleteConfirm(null)}
@@ -142,5 +143,5 @@ export default function SessionHistory() {
         </div>
       )}
     </div>
-  );
+  )
 }

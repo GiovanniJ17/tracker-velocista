@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react'
 
 export default function LoadingSpinner({ message = 'Caricamento...' }) {
   return (
@@ -6,7 +6,7 @@ export default function LoadingSpinner({ message = 'Caricamento...' }) {
       <Loader2 className="w-8 h-8 animate-spin mb-3" />
       <p className="text-sm">{message}</p>
     </div>
-  );
+  )
 }
 
 export function FullPageLoader({ message = 'Caricamento...' }) {
@@ -19,5 +19,5 @@ export function FullPageLoader({ message = 'Caricamento...' }) {
         </div>
       </div>
     </div>
-  );
+  )
 }

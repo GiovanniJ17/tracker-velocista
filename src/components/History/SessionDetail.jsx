@@ -1,6 +1,6 @@
-import { format } from 'date-fns';
-import { it } from 'date-fns/locale';
-import { Trash2, MapPin } from 'lucide-react';
+import { format } from 'date-fns'
+import { it } from 'date-fns/locale'
+import { Trash2, MapPin } from 'lucide-react'
 
 export default function SessionDetail({ date, sessions, onDelete, loading }) {
   const getTypeColor = (type) => {
@@ -12,10 +12,10 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
       test: 'bg-yellow-500',
       scarico: 'bg-cyan-500',
       recupero: 'bg-teal-500',
-      altro: 'bg-gray-500',
-    };
-    return colors[type] || 'bg-gray-500';
-  };
+      altro: 'bg-gray-500'
+    }
+    return colors[type] || 'bg-gray-500'
+  }
 
   const typeLabels = {
     pista: 'Pista',
@@ -25,20 +25,20 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
     test: 'Test',
     scarico: 'Scarico',
     recupero: 'Recupero',
-    altro: 'Altro',
-  };
+    altro: 'Altro'
+  }
 
   const buildDisplayTitle = (session) => {
-    const firstNoteLine = session.notes?.split('\n')?.[0]?.trim();
-    return firstNoteLine || '';
-  };
+    const firstNoteLine = session.notes?.split('\n')?.[0]?.trim()
+    return firstNoteLine || ''
+  }
 
   if (loading) {
     return (
       <div className="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center">
         <p className="text-gray-400">Caricamento...</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -52,7 +52,7 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
           <p className="text-gray-400">Nessuna sessione registrata per questo giorno</p>
         </div>
       ) : (
-        sessions.map(session => (
+        sessions.map((session) => (
           <div
             key={session.id}
             className="bg-slate-800 rounded-xl border border-slate-700 p-6 hover:border-slate-600 transition"
@@ -60,7 +60,9 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
             {/* Header Sessione */}
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3 flex-1">
-                <div className={`${getTypeColor(session.type)} px-3 py-1 rounded-full text-white text-sm font-medium`}>
+                <div
+                  className={`${getTypeColor(session.type)} px-3 py-1 rounded-full text-white text-sm font-medium`}
+                >
                   {typeLabels[session.type] || session.type}
                 </div>
                 <div>
@@ -116,7 +118,10 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
             {session.groups && session.groups.length > 0 ? (
               <div className="space-y-3">
                 {session.groups.map((group) => (
-                  <div key={group.id} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
+                  <div
+                    key={group.id}
+                    className="bg-slate-900/60 border border-slate-700 rounded-lg p-4"
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-white">{group.name || 'Gruppo'}</p>
                       {group.notes && <p className="text-xs text-gray-400">{group.notes}</p>}
@@ -131,10 +136,16 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
                             <span className="font-semibold">{set.exercise_name}</span>
                             {set.sets && <span className="text-gray-400">{set.sets}x</span>}
                             {set.reps && <span className="text-gray-400">{set.reps} rep</span>}
-                            {set.weight_kg && <span className="text-gray-400">{set.weight_kg} kg</span>}
-                            {set.distance_m && <span className="text-gray-400">{set.distance_m} m</span>}
+                            {set.weight_kg && (
+                              <span className="text-gray-400">{set.weight_kg} kg</span>
+                            )}
+                            {set.distance_m && (
+                              <span className="text-gray-400">{set.distance_m} m</span>
+                            )}
                             {set.time_s && <span className="text-gray-400">{set.time_s}s</span>}
-                            {set.recovery_s && <span className="text-gray-500">rec {set.recovery_s}s</span>}
+                            {set.recovery_s && (
+                              <span className="text-gray-500">rec {set.recovery_s}s</span>
+                            )}
                             {set.notes && <span className="text-gray-300">• {set.notes}</span>}
                           </div>
                         ))}
@@ -146,11 +157,13 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-gray-500">Esercizi non ancora caricati nel dettaglio</div>
+              <div className="text-xs text-gray-500">
+                Esercizi non ancora caricati nel dettaglio
+              </div>
             )}
           </div>
         ))
       )}
     </div>
-  );
+  )
 }

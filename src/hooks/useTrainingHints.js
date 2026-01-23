@@ -2,13 +2,13 @@
  * Hook personalizzato per suggerimenti in tempo reale
  * durante la digitazione dell'allenamento
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 
 export function useTrainingHints(text) {
-  const [hints, setHints] = useState([]);
+  const [hints, setHints] = useState([])
 
   useEffect(() => {
-    const newHints = [];
+    const newHints = []
 
     // Rileva menzioni di distanze
     if (/\d+\s*(km|m|metri|metri)/i.test(text)) {
@@ -16,7 +16,7 @@ export function useTrainingHints(text) {
         type: 'distance',
         icon: '📏',
         message: 'Distanza rilevata'
-      });
+      })
     }
 
     // Rileva menzioni di pesi
@@ -25,7 +25,7 @@ export function useTrainingHints(text) {
         type: 'weight',
         icon: '🏋️',
         message: 'Peso rilevato'
-      });
+      })
     }
 
     // Rileva menzioni di serie e ripetizioni
@@ -34,7 +34,7 @@ export function useTrainingHints(text) {
         type: 'sets',
         icon: '🔄',
         message: 'Serie e ripetizioni rilevate'
-      });
+      })
     }
 
     // Rileva menzioni di RPE
@@ -43,7 +43,7 @@ export function useTrainingHints(text) {
         type: 'rpe',
         icon: '💪',
         message: 'RPE rilevato'
-      });
+      })
     }
 
     // Rileva menzioni di tempi
@@ -52,7 +52,7 @@ export function useTrainingHints(text) {
         type: 'time',
         icon: '⏱️',
         message: 'Tempo rilevato'
-      });
+      })
     }
 
     // Suggerisci tipi di sessione
@@ -60,24 +60,24 @@ export function useTrainingHints(text) {
       pista: ['pista', 'track', 'sprint', '200m', '400m'],
       palestra: ['palestra', 'gym', 'squat', 'panca', 'stacco'],
       strada: ['strada', 'road', 'corsa lunga', 'fondo'],
-      gara: ['gara', 'race', 'competizione'],
-    };
+      gara: ['gara', 'race', 'competizione']
+    }
 
     for (const [type, keywords] of Object.entries(sessionTypes)) {
-      if (keywords.some(keyword => text.toLowerCase().includes(keyword))) {
+      if (keywords.some((keyword) => text.toLowerCase().includes(keyword))) {
         newHints.push({
           type: 'session-type',
           icon: '🎯',
           message: `Tipo sessione: ${type}`
-        });
-        break;
+        })
+        break
       }
     }
 
-    setHints(newHints);
-  }, [text]);
+    setHints(newHints)
+  }, [text])
 
-  return hints;
+  return hints
 }
 
 /**
@@ -87,39 +87,39 @@ export function extractQuickMetrics(text) {
   const metrics = {
     exercises: 0,
     distance: 0,
-    sets: 0,
-  };
+    sets: 0
+  }
 
   // Conta esercizi (approssimativo)
   const exercisePatterns = [
     /\d+\s*x\s*\d+/g, // serie x reps
     /\d+\s*(km|m)\b/g, // distanze
-    /\w+\s*\d+\s*kg/g, // pesi
-  ];
+    /\w+\s*\d+\s*kg/g // pesi
+  ]
 
-  exercisePatterns.forEach(pattern => {
-    const matches = text.match(pattern);
-    if (matches) metrics.exercises += matches.length;
-  });
+  exercisePatterns.forEach((pattern) => {
+    const matches = text.match(pattern)
+    if (matches) metrics.exercises += matches.length
+  })
 
   // Somma distanze totali
-  const distanceMatches = text.match(/(\d+(?:\.\d+)?)\s*(km|m)/gi);
+  const distanceMatches = text.match(/(\d+(?:\.\d+)?)\s*(km|m)/gi)
   if (distanceMatches) {
-    distanceMatches.forEach(match => {
-      const [, num, unit] = match.match(/(\d+(?:\.\d+)?)\s*(km|m)/i);
-      const meters = unit.toLowerCase() === 'km' ? parseFloat(num) * 1000 : parseFloat(num);
-      metrics.distance += meters;
-    });
+    distanceMatches.forEach((match) => {
+      const [, num, unit] = match.match(/(\d+(?:\.\d+)?)\s*(km|m)/i)
+      const meters = unit.toLowerCase() === 'km' ? parseFloat(num) * 1000 : parseFloat(num)
+      metrics.distance += meters
+    })
   }
 
   // Conta serie totali
-  const setsMatches = text.match(/(\d+)\s*x\s*\d+/g);
+  const setsMatches = text.match(/(\d+)\s*x\s*\d+/g)
   if (setsMatches) {
-    setsMatches.forEach(match => {
-      const [, sets] = match.match(/(\d+)\s*x\s*\d+/);
-      metrics.sets += parseInt(sets);
-    });
+    setsMatches.forEach((match) => {
+      const [, sets] = match.match(/(\d+)\s*x\s*\d+/)
+      metrics.sets += parseInt(sets)
+    })
   }
 
-  return metrics;
+  return metrics
 }

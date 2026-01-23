@@ -1,25 +1,25 @@
-import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useState } from 'react'
+import { X } from 'lucide-react'
 import {
   addRaceRecord,
   addTrainingRecord,
   addStrengthRecord,
-  addInjury,
-} from '../services/athleteService';
+  addInjury
+} from '../services/athleteService'
 
 export default function RecordModal({ sessionId, onClose, onSuccess }) {
-  const [recordType, setRecordType] = useState('race'); // race, training, strength, injury
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({});
-  const [message, setMessage] = useState(null);
+  const [recordType, setRecordType] = useState('race') // race, training, strength, injury
+  const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState({})
+  const [message, setMessage] = useState(null)
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage(null);
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
 
     try {
-      let result;
+      let result
 
       switch (recordType) {
         case 'race':
@@ -30,9 +30,9 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
             location: formData.location,
             competition_name: formData.competition_name,
             notes: formData.notes,
-            is_personal_best: formData.is_personal_best || false,
-          });
-          break;
+            is_personal_best: formData.is_personal_best || false
+          })
+          break
 
         case 'training':
           result = await addTrainingRecord(sessionId, {
@@ -42,9 +42,9 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
             performance_unit: formData.performance_unit,
             rpe: formData.rpe ? parseInt(formData.rpe) : null,
             notes: formData.notes,
-            is_personal_best: formData.is_personal_best || false,
-          });
-          break;
+            is_personal_best: formData.is_personal_best || false
+          })
+          break
 
         case 'strength':
           result = await addStrengthRecord(sessionId, {
@@ -53,9 +53,9 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
             weight_kg: parseFloat(formData.weight_kg),
             reps: parseInt(formData.reps) || 1,
             notes: formData.notes,
-            is_personal_best: formData.is_personal_best || false,
-          });
-          break;
+            is_personal_best: formData.is_personal_best || false
+          })
+          break
 
         case 'injury':
           result = await addInjury({
@@ -65,38 +65,38 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
             end_date: formData.end_date || null,
             severity: formData.severity,
             cause_session_id: sessionId,
-            notes: formData.notes,
-          });
-          break;
+            notes: formData.notes
+          })
+          break
 
         default:
-          throw new Error('Tipo record non valido');
+          throw new Error('Tipo record non valido')
       }
 
       if (result.success) {
-        setMessage({ type: 'success', text: 'Record aggiunto con successo!' });
-        setFormData({});
+        setMessage({ type: 'success', text: 'Record aggiunto con successo!' })
+        setFormData({})
         setTimeout(() => {
-          onSuccess?.();
-          onClose();
-        }, 1500);
+          onSuccess?.()
+          onClose()
+        }, 1500)
       } else {
-        setMessage({ type: 'error', text: result.error });
+        setMessage({ type: 'error', text: result.error })
       }
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      setMessage({ type: 'error', text: error.message })
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+    const { name, value, type, checked } = e.target
+    setFormData((prev) => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
-    }));
-  };
+    }))
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -109,10 +109,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
             {recordType === 'strength' && 'Aggiungi Massimale'}
             {recordType === 'injury' && 'Registra Infortunio'}
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -121,14 +118,12 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {/* Selector Tipo Record */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Tipo di Record
-            </label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Tipo di Record</label>
             <select
               value={recordType}
               onChange={(e) => {
-                setRecordType(e.target.value);
-                setFormData({});
+                setRecordType(e.target.value)
+                setFormData({})
               }}
               className="w-full bg-slate-700 border border-slate-600 text-white rounded-lg px-3 py-2"
             >
@@ -172,9 +167,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Competizione
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Competizione</label>
                 <input
                   type="text"
                   name="competition_name"
@@ -191,9 +184,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
           {recordType === 'training' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Esercizio *
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Esercizio *</label>
                 <input
                   type="text"
                   name="exercise_name"
@@ -205,9 +196,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Tipo *
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Tipo *</label>
                 <select
                   name="exercise_type"
                   value={formData.exercise_type || ''}
@@ -224,9 +213,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    Valore *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Valore *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -239,9 +226,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    Unità *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Unità *</label>
                   <select
                     name="performance_unit"
                     value={formData.performance_unit || ''}
@@ -263,9 +248,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
           {recordType === 'strength' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Esercizio *
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Esercizio *</label>
                 <input
                   type="text"
                   name="exercise_name"
@@ -277,9 +260,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Categoria *
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Categoria *</label>
                 <select
                   name="category"
                   value={formData.category || ''}
@@ -315,9 +296,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    Reps
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Reps</label>
                   <input
                     type="number"
                     name="reps"
@@ -362,9 +341,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Gravità *
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Gravità *</label>
                 <select
                   name="severity"
                   value={formData.severity || ''}
@@ -384,9 +361,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
           {/* Campi comuni */}
           {recordType !== 'injury' && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
-                RPE (1-10)
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">RPE (1-10)</label>
               <input
                 type="number"
                 name="rpe"
@@ -415,9 +390,7 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
 
           {/* Note */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
-              Note
-            </label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Note</label>
             <textarea
               name="notes"
               value={formData.notes || ''}
@@ -430,11 +403,13 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
 
           {/* Message */}
           {message && (
-            <div className={`p-3 rounded-lg text-sm ${
-              message.type === 'success'
-                ? 'bg-green-900/20 text-green-300'
-                : 'bg-red-900/20 text-red-300'
-            }`}>
+            <div
+              className={`p-3 rounded-lg text-sm ${
+                message.type === 'success'
+                  ? 'bg-green-900/20 text-green-300'
+                  : 'bg-red-900/20 text-red-300'
+              }`}
+            >
               {message.text}
             </div>
           )}
@@ -459,5 +434,5 @@ export default function RecordModal({ sessionId, onClose, onSuccess }) {
         </form>
       </div>
     </div>
-  );
+  )
 }

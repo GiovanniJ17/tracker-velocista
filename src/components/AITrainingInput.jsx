@@ -1,139 +1,139 @@
-import { useState } from 'react';
-import { Sparkles, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { parseTrainingWithAI, validateParsedData } from '../services/aiParser';
-import { saveTrainingSessions } from '../services/trainingService';
-import AmbiguityModal from './AmbiguityModal';
+import { useState } from 'react'
+import { Sparkles, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { parseTrainingWithAI, validateParsedData } from '../services/aiParser'
+import { saveTrainingSessions } from '../services/trainingService'
+import AmbiguityModal from './AmbiguityModal'
 
 function friendlyErrorMessage(message) {
-  const text = (message || '').toLowerCase();
+  const text = (message || '').toLowerCase()
 
   if (text.includes('overload') || text.includes('overloaded')) {
-    return 'Server Google Gemini sovraccarico. Riprova tra qualche secondo.';
-  }
-  
-  if (text.includes('quota') || text.includes('exceeded')) {
-    return 'Quota Gemini esaurita. Contatta l\'amministratore.';
-  }
-  
-  if (text.includes('api key') || text.includes('key was reported as leaked')) {
-    return 'Errore di autenticazione. Contatta l\'amministratore.';
+    return 'Server Google Gemini sovraccarico. Riprova tra qualche secondo.'
   }
 
-  return message || 'Errore sconosciuto';
+  if (text.includes('quota') || text.includes('exceeded')) {
+    return "Quota Gemini esaurita. Contatta l'amministratore."
+  }
+
+  if (text.includes('api key') || text.includes('key was reported as leaked')) {
+    return "Errore di autenticazione. Contatta l'amministratore."
+  }
+
+  return message || 'Errore sconosciuto'
 }
 
 export default function AITrainingInput({ onDataSaved }) {
-  const [trainingText, setTrainingText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [parsedData, setParsedData] = useState(null);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [ambiguityQuestions, setAmbiguityQuestions] = useState(null);
-  const [warnings, setWarnings] = useState([]);
+  const [trainingText, setTrainingText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [parsedData, setParsedData] = useState(null)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(false)
+  const [ambiguityQuestions, setAmbiguityQuestions] = useState(null)
+  const [warnings, setWarnings] = useState([])
 
   const handleParse = async () => {
     if (!trainingText.trim()) {
-      setError('Inserisci una descrizione dell\'allenamento');
-      return;
+      setError("Inserisci una descrizione dell'allenamento")
+      return
     }
 
-    setLoading(true);
-    setError(null);
-    setParsedData(null);
-    setSuccess(false);
-    setAmbiguityQuestions(null);
-    setWarnings([]);
+    setLoading(true)
+    setError(null)
+    setParsedData(null)
+    setSuccess(false)
+    setAmbiguityQuestions(null)
+    setWarnings([])
 
-    console.log('[AITrainingInput] Starting parse with text:', trainingText.substring(0, 100));
+    console.log('[AITrainingInput] Starting parse with text:', trainingText.substring(0, 100))
 
     try {
-      const parsed = await parseTrainingWithAI(trainingText, new Date());
-      console.log('[AITrainingInput] Parse result:', parsed);
+      const parsed = await parseTrainingWithAI(trainingText, new Date())
+      console.log('[AITrainingInput] Parse result:', parsed)
 
-        // Estrai questions e warnings dall'AI
-      const questionsFromAI = parsed.questions_for_user || [];
-      const warningsFromAI = parsed.warnings || [];
+      // Estrai questions e warnings dall'AI
+      const questionsFromAI = parsed.questions_for_user || []
+      const warningsFromAI = parsed.warnings || []
 
       // Se ci sono ambiguità, mostra subito il modal e rimanda la validazione
       if (questionsFromAI.length > 0) {
-        setParsedData(parsed);
-        setAmbiguityQuestions(questionsFromAI);
-        if (warningsFromAI.length > 0) setWarnings(warningsFromAI);
-        setLoading(false);
-        return;
+        setParsedData(parsed)
+        setAmbiguityQuestions(questionsFromAI)
+        if (warningsFromAI.length > 0) setWarnings(warningsFromAI)
+        setLoading(false)
+        return
       }
 
       // Altrimenti valida normalmente
-      const validation = validateParsedData(parsed);
+      const validation = validateParsedData(parsed)
       if (!validation.valid) {
-        setError(`Errori di validazione: ${validation.errors.join(', ')}`);
-        setLoading(false);
-        return;
+        setError(`Errori di validazione: ${validation.errors.join(', ')}`)
+        setLoading(false)
+        return
       }
 
       // Mostra i warnings
       if (warningsFromAI.length > 0) {
-        setWarnings(warningsFromAI);
+        setWarnings(warningsFromAI)
       }
 
-      setParsedData(parsed);
+      setParsedData(parsed)
     } catch (err) {
-      console.error('[AITrainingInput] Parse error:', err);
-      setError(friendlyErrorMessage(err.message));
+      console.error('[AITrainingInput] Parse error:', err)
+      setError(friendlyErrorMessage(err.message))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleSave = async () => {
-    if (!parsedData) return;
+    if (!parsedData) return
 
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
 
     try {
-      const result = await saveTrainingSessions(parsedData);
-      
+      const result = await saveTrainingSessions(parsedData)
+
       if (result.success) {
-        setSuccess(true);
+        setSuccess(true)
         // Segnala al parent di ricaricare i dati del profilo
-        if (onDataSaved) onDataSaved();
+        if (onDataSaved) onDataSaved()
         setTimeout(() => {
-          setTrainingText('');
-          setParsedData(null);
-          setSuccess(false);
-        }, 2000);
+          setTrainingText('')
+          setParsedData(null)
+          setSuccess(false)
+        }, 2000)
       } else {
-        setError(result.error);
+        setError(result.error)
       }
     } catch (err) {
-      setError(friendlyErrorMessage(err.message));
+      setError(friendlyErrorMessage(err.message))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleResolveAmbiguity = (answers) => {
     // Applica le risposte utente al parsed data
     if (parsedData && answers) {
-      const updatedData = { ...parsedData };
-      
+      const updatedData = { ...parsedData }
+
       // Aggiorna i campi basato sulle risposte
       Object.entries(answers).forEach(([field, value]) => {
         if (updatedData[field]) {
-          updatedData[field] = value;
+          updatedData[field] = value
         }
-      });
-      
-      setParsedData(updatedData);
+      })
+
+      setParsedData(updatedData)
     }
-    
-    setAmbiguityQuestions(null);
-  };
+
+    setAmbiguityQuestions(null)
+  }
 
   const handleSkipAmbiguity = () => {
-    setAmbiguityQuestions(null);
-  };
+    setAmbiguityQuestions(null)
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -244,10 +244,14 @@ export default function AITrainingInput({ onDataSaved }) {
                         <p className="text-xs text-gray-400">Data</p>
                         <p className="text-white font-semibold">{sessionWrapper.session.date}</p>
                       </div>
-                      <div className="text-sm text-gray-300">Sessione {sessionIdx + 1} di {parsedData.sessions.length}</div>
+                      <div className="text-sm text-gray-300">
+                        Sessione {sessionIdx + 1} di {parsedData.sessions.length}
+                      </div>
                     </div>
 
-                    <h4 className="font-medium text-white mb-2">{sessionWrapper.session.title || 'Sessione'}</h4>
+                    <h4 className="font-medium text-white mb-2">
+                      {sessionWrapper.session.title || 'Sessione'}
+                    </h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="text-gray-400">Tipo:</div>
                       <div className="text-white capitalize">{sessionWrapper.session.type}</div>
@@ -271,7 +275,10 @@ export default function AITrainingInput({ onDataSaved }) {
                         <h5 className="font-medium text-primary-300 mb-2">{group.name}</h5>
                         <div className="space-y-2">
                           {group.sets.map((set, setIdx) => (
-                            <div key={setIdx} className="text-sm text-gray-300 pl-3 border-l-2 border-primary-500">
+                            <div
+                              key={setIdx}
+                              className="text-sm text-gray-300 pl-3 border-l-2 border-primary-500"
+                            >
                               <span className="font-medium">{set.exercise_name}</span>
                               {set.sets > 1 && <span> • {set.sets} serie</span>}
                               {set.reps > 1 && <span> • {set.reps} reps</span>}
@@ -292,22 +299,29 @@ export default function AITrainingInput({ onDataSaved }) {
               {/* Debug: Mostra PB e infortuni estratti */}
               {(parsedData.personalBests?.length > 0 || parsedData.injuries?.length > 0) && (
                 <div className="border-t border-slate-600 pt-4 mt-4">
-                  <h3 className="text-sm font-semibold text-primary-300 mb-2">📋 Dati Auto-Estratti:</h3>
+                  <h3 className="text-sm font-semibold text-primary-300 mb-2">
+                    📋 Dati Auto-Estratti:
+                  </h3>
                   {parsedData.personalBests?.length > 0 && (
                     <div className="text-xs text-gray-300 mb-2">
-                      <strong>PB:</strong> {parsedData.personalBests.map(pb => {
-                        if (pb.type === 'race') return `${pb.distance_m}m ${pb.time_s}s`;
-                        if (pb.type === 'training') return `${pb.exercise_name} ${pb.performance_value}${pb.performance_unit === 'seconds' ? 's' : ' ' + pb.performance_unit}`;
-                        if (pb.type === 'strength') return `${pb.exercise_name} ${pb.weight_kg}kg`;
-                        return pb.exercise_name || 'PB';
-                      }).join(', ')}
+                      <strong>PB:</strong>{' '}
+                      {parsedData.personalBests
+                        .map((pb) => {
+                          if (pb.type === 'race') return `${pb.distance_m}m ${pb.time_s}s`
+                          if (pb.type === 'training')
+                            return `${pb.exercise_name} ${pb.performance_value}${pb.performance_unit === 'seconds' ? 's' : ' ' + pb.performance_unit}`
+                          if (pb.type === 'strength') return `${pb.exercise_name} ${pb.weight_kg}kg`
+                          return pb.exercise_name || 'PB'
+                        })
+                        .join(', ')}
                     </div>
                   )}
                   {parsedData.injuries?.length > 0 && (
                     <div className="text-xs text-gray-300">
-                      <strong>Infortuni:</strong> {parsedData.injuries.map(inj => 
-                        `${inj.injury_type} ${inj.body_part} (${inj.severity})`
-                      ).join(', ')}
+                      <strong>Infortuni:</strong>{' '}
+                      {parsedData.injuries
+                        .map((inj) => `${inj.injury_type} ${inj.body_part} (${inj.severity})`)
+                        .join(', ')}
                     </div>
                   )}
                 </div>
@@ -348,7 +362,10 @@ export default function AITrainingInput({ onDataSaved }) {
                   <p className="text-green-300 font-semibold">
                     ✅ Sessione salvata con successo!
                     {parsedData.personalBests && parsedData.personalBests.length > 0 && (
-                      <span> • {parsedData.personalBests.length} PB aggiunto(i) automaticamente</span>
+                      <span>
+                        {' '}
+                        • {parsedData.personalBests.length} PB aggiunto(i) automaticamente
+                      </span>
                     )}
                     {parsedData.injuries && parsedData.injuries.length > 0 && (
                       <span> • {parsedData.injuries.length} infortunio(i) registrato(i)</span>
@@ -371,16 +388,22 @@ export default function AITrainingInput({ onDataSaved }) {
             <strong className="text-primary-300">Con PB:</strong> "100m 10.5sec PB + sprint 60m"
           </div>
           <div className="bg-slate-700/30 p-3 rounded">
-            <strong className="text-primary-300">Con Massimale:</strong> "Squat 100kg PB, panca 75kg massimale"
+            <strong className="text-primary-300">Con Massimale:</strong> "Squat 100kg PB, panca 75kg
+            massimale"
           </div>
           <div className="bg-slate-700/30 p-3 rounded">
-            <strong className="text-primary-300">Con Infortunio:</strong> "Sessione pista ma dolore spalla lieve"
+            <strong className="text-primary-300">Con Infortunio:</strong> "Sessione pista ma dolore
+            spalla lieve"
           </div>
           <div className="bg-slate-700/30 p-3 rounded">
-            <strong className="text-primary-300">Completo:</strong> "Pista: 100m 10.4sec nuovo record. Infortunio caviglia minore durante riscaldamento. Squat 110kg massimale in palestra"
+            <strong className="text-primary-300">Completo:</strong> "Pista: 100m 10.4sec nuovo
+            record. Infortunio caviglia minore durante riscaldamento. Squat 110kg massimale in
+            palestra"
           </div>
           <div className="bg-slate-700/30 p-3 rounded">
-            <strong className="text-primary-300">Settimana intera:</strong> "Lunedì test 150m e 60m... Martedì tecnica 3x120m... Venerdì 3x4x100m + 150m finale" (le date vengono assegnate automaticamente ai giorni indicati)
+            <strong className="text-primary-300">Settimana intera:</strong> "Lunedì test 150m e
+            60m... Martedì tecnica 3x120m... Venerdì 3x4x100m + 150m finale" (le date vengono
+            assegnate automaticamente ai giorni indicati)
           </div>
         </div>
       </div>
@@ -394,5 +417,5 @@ export default function AITrainingInput({ onDataSaved }) {
         />
       )}
     </div>
-  );
+  )
 }

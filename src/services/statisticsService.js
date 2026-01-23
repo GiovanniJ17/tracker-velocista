@@ -3,104 +3,127 @@
  * Calcola metriche complesse per dashboard statistiche
  */
 
-import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, getWeek, getYear, format } from 'date-fns';
-import { supabase } from '../lib/supabase';
+import { getWeek, getYear, format } from 'date-fns'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { firestore } from '../lib/firebase'
 
 /**
  * Recupera tutte le sessioni e i record (estratti dai workout_sets) per il periodo indicato
  */
 export async function getStatsData(startDate = null, endDate = null) {
   try {
-    const rawEnd = endDate || new Date();
-    const end = new Date(rawEnd);
-    const start = startDate || new Date(rawEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const rawEnd = endDate || new Date()
+    const end = new Date(rawEnd)
+    const start = startDate || new Date(rawEnd.getTime() - 90 * 24 * 60 * 60 * 1000)
 
-    const { data: sessionsData, error: sessionsError } = await supabase
-      .from('training_sessions')
-      .select(`
-        *,
-        workout_groups (
-          *,
-          workout_sets (*)
-        )
-      `)
-      .gte('date', start.toISOString())
-      .lte('date', end.toISOString())
-      .order('date', { ascending: true });
+    const startStr = format(start, 'yyyy-MM-dd')
+    const endStr = format(end, 'yyyy-MM-dd')
 
-    const { data: injuriesData, error: injuriesError } = await supabase
-      .from('injury_history')
-      .select('*');
+    const sessionsQuery = query(
+      collection(firestore, 'training_sessions'),
+      where('date', '>=', startStr),
+      where('date', '<=', endStr)
+    )
+    const sessionsSnap = await getDocs(sessionsQuery)
+    const sessions = []
 
-    if (sessionsError || injuriesError) {
-      console.error('[statisticsService] Query error', { sessionsError, injuriesError });
-      throw sessionsError || injuriesError;
+    for (const sessionDoc of sessionsSnap.docs) {
+      const sessionData = { id: sessionDoc.id, ...sessionDoc.data(), workout_groups: [] }
+      const groupsSnap = await getDocs(collection(sessionDoc.ref, 'workout_groups'))
+      for (const groupDoc of groupsSnap.docs) {
+        const groupData = { id: groupDoc.id, ...groupDoc.data(), workout_sets: [] }
+        const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+        groupData.workout_sets = setsSnap.docs.map((setDoc) => ({
+          id: setDoc.id,
+          ...setDoc.data()
+        }))
+        sessionData.workout_groups.push(groupData)
+      }
+      sessions.push(sessionData)
     }
 
-    const sessions = sessionsData || [];
-    const raceRecords = [];
-    const strengthRecords = [];
-    const trainingRecords = [];
+    const injuriesSnap = await getDocs(collection(firestore, 'injury_history'))
+    const injuriesData = injuriesSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+    const raceRecordsSnap = await getDocs(collection(firestore, 'race_records'))
+    const trainingRecordsSnap = await getDocs(collection(firestore, 'training_records'))
+    const strengthRecordsSnap = await getDocs(collection(firestore, 'strength_records'))
+
+    const raceRecords = raceRecordsSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((record) => record.date >= startStr && record.date <= endStr)
+    const trainingRecords = trainingRecordsSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((record) => record.date >= startStr && record.date <= endStr)
+    const strengthRecords = strengthRecordsSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((record) => record.date >= startStr && record.date <= endStr)
 
     const isWarmup = (name) => {
-      if (!name || typeof name !== 'string') return false;
-      return /riscald|warm\s?-?up|attivazione|drills/i.test(name);
-    };
+      if (!name || typeof name !== 'string') return false
+      return /riscald|warm\s?-?up|attivazione|drills/i.test(name)
+    }
 
-    sessions.forEach(session => {
-      const groups = session.workout_groups || [];
+    sessions.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
 
-      groups.forEach(group => {
-        const sets = group.workout_sets || [];
+    sessions.forEach((session) => {
+      const groups = session.workout_groups || []
 
-        sets.forEach(set => {
-          const warmup = isWarmup(group?.name) || isWarmup(set?.exercise_name);
+      groups.forEach((group) => {
+        const sets = group.workout_sets || []
+
+        sets.forEach((set) => {
+          const warmup = isWarmup(group?.name) || isWarmup(set?.exercise_name)
           const isTestFlag = Boolean(
             set?.details?.is_test ||
             set?.details?.is_pb_candidate ||
             session.type === 'gara' ||
             session.type === 'test'
-          );
-          const highIntensity = typeof set?.details?.intensity === 'number' ? set.details.intensity >= 7 : false;
-          const normalizedExercise = typeof set.exercise_name === 'string' ? set.exercise_name.trim().toLowerCase() : '';
+          )
+          const highIntensity =
+            typeof set?.details?.intensity === 'number' ? set.details.intensity >= 7 : false
+          const normalizedExercise =
+            typeof set.exercise_name === 'string' ? set.exercise_name.trim().toLowerCase() : ''
 
           // Record corsa: includi solo set cronometrati non marcati come riscaldamento
           if (set.distance_m > 0 && set.time_s > 0 && !warmup) {
             if (isTestFlag || highIntensity || set.category === 'sprint') {
-              raceRecords.push({
+              // Keep session-linked race data for charts even if not PB
+              if (!raceRecords.find((r) => r.id === set.id)) {
+                raceRecords.push({
+                  id: set.id,
+                  session_id: session.id,
+                  date: session.date,
+                  created_at: session.date,
+                  distance_m: set.distance_m,
+                  time_s: set.time_s,
+                  is_personal_best: set.is_personal_best || false,
+                  is_test: isTestFlag,
+                  type: 'race'
+                })
+              }
+            }
+          }
+
+          if (set.weight_kg > 0 && !warmup) {
+            if (!strengthRecords.find((r) => r.id === set.id)) {
+              strengthRecords.push({
                 id: set.id,
                 session_id: session.id,
                 date: session.date,
                 created_at: session.date,
-                distance_m: set.distance_m,
-                time_s: set.time_s,
-                is_personal_best: set.details?.is_personal_best || false,
-                is_test: isTestFlag,
-                type: 'race',
-              });
+                exercise_name: set.exercise_name,
+                normalized_exercise_name: normalizedExercise || null,
+                weight_kg: set.weight_kg,
+                reps: set.reps,
+                sets: set.sets,
+                is_personal_best: set.is_personal_best || false,
+                is_test: isTestFlag
+              })
             }
           }
-
-          // Record forza: includi set con peso, ignora warmup leggero
-          if (set.weight_kg > 0 && !warmup) {
-            strengthRecords.push({
-              id: set.id,
-              session_id: session.id,
-              date: session.date,
-              created_at: session.date,
-              exercise_name: set.exercise_name,
-              normalized_exercise_name: normalizedExercise || null,
-              weight_kg: set.weight_kg,
-              reps: set.reps,
-              sets: set.sets,
-              is_personal_best: set.details?.is_personal_best || false,
-              is_test: isTestFlag,
-            });
-          }
-        });
-      });
-    });
-
+        })
+      })
+    })
 
     return {
       success: true,
@@ -109,12 +132,12 @@ export async function getStatsData(startDate = null, endDate = null) {
         raceRecords,
         trainingRecords,
         strengthRecords,
-        injuries: injuriesData || [],
-      },
-    };
+        injuries: injuriesData || []
+      }
+    }
   } catch (error) {
-    console.error('Errore nel recupero dati statistiche:', error);
-    return { success: false, error: error.message };
+    console.error('Errore nel recupero dati statistiche:', error)
+    return { success: false, error: error.message }
   }
 }
 
@@ -129,134 +152,137 @@ export function calculateKPIs(sessions, raceRecords, strengthRecords, trainingRe
     totalTonnageKg: 0, // Volume sala (kg)
     avgRPE: 0,
     sessionsByType: {},
-    pbCount: (raceRecords.filter(r => r.is_personal_best).length) + (trainingRecords.filter(t => t.is_personal_best).length),
+    pbCount:
+      raceRecords.filter((r) => r.is_personal_best).length +
+      trainingRecords.filter((t) => t.is_personal_best).length +
+      strengthRecords.filter((s) => s.is_personal_best).length,
     streak: calculateStreak(sessions),
     // Nuovi campi separati
     volumeByCategory: {
       track: { distance_m: 0, sessions: 0 }, // Pista: solo distanza
-      gym: { tonnage_kg: 0, sessions: 0 },   // Sala: solo tonnellaggio
-      endurance: { distance_m: 0, sessions: 0 }, // Strada: lunghi
+      gym: { tonnage_kg: 0, sessions: 0 }, // Sala: solo tonnellaggio
+      endurance: { distance_m: 0, sessions: 0 } // Strada: lunghi
     }
-  };
+  }
 
   // Calcola volume totale (sessioni con distanza/durata)
-  let totalRPE = 0;
-  let rpeCount = 0;
+  let totalRPE = 0
+  let rpeCount = 0
 
-  sessions.forEach(session => {
-    const type = session.type || 'altro';
-    stats.sessionsByType[type] = (stats.sessionsByType[type] || 0) + 1;
+  sessions.forEach((session) => {
+    const type = session.type || 'altro'
+    stats.sessionsByType[type] = (stats.sessionsByType[type] || 0) + 1
 
     if (session.rpe) {
-      totalRPE += session.rpe;
-      rpeCount++;
+      totalRPE += session.rpe
+      rpeCount++
     }
 
     // Categorizza sessione per volume
-    let sessionCategory = null;
+    let sessionCategory = null
     if (type === 'pista' || type === 'gara' || type === 'test') {
-      sessionCategory = 'track';
+      sessionCategory = 'track'
     } else if (type === 'palestra') {
-      sessionCategory = 'gym';
+      sessionCategory = 'gym'
     } else if (type === 'strada') {
-      sessionCategory = 'endurance';
+      sessionCategory = 'endurance'
     }
 
     // Volume: somma distanza e tonnellaggio dai set annidati (SEPARATI)
-    (session.workout_groups || []).forEach(group => {
-      (group.workout_sets || []).forEach(set => {
-        const setCount = set.sets || 1;
-        const reps = set.reps || 1;
-        
+    ;(session.workout_groups || []).forEach((group) => {
+      ;(group.workout_sets || []).forEach((set) => {
+        const setCount = set.sets || 1
+        const reps = set.reps || 1
+
         // PISTA: solo sprint/jump (non riscaldamento lungo)
         if (set.category === 'sprint' || set.category === 'jump') {
           if (set.distance_m) {
-            const volume = Number(set.distance_m || 0) * setCount;
-            stats.totalDistanceM += volume;
+            const volume = Number(set.distance_m || 0) * setCount
+            stats.totalDistanceM += volume
             if (sessionCategory === 'track') {
-              stats.volumeByCategory.track.distance_m += volume;
+              stats.volumeByCategory.track.distance_m += volume
             }
           }
         }
-        
+
         // SALA: solo lift
         if (set.category === 'lift' && set.weight_kg) {
-          const tonnage = Number(set.weight_kg || 0) * setCount * reps;
-          stats.totalTonnageKg += tonnage;
+          const tonnage = Number(set.weight_kg || 0) * setCount * reps
+          stats.totalTonnageKg += tonnage
           if (sessionCategory === 'gym') {
-            stats.volumeByCategory.gym.tonnage_kg += tonnage;
+            stats.volumeByCategory.gym.tonnage_kg += tonnage
           }
         }
-        
+
         // ENDURANCE: solo corsa lunga
         if (set.category === 'endurance' && set.distance_m) {
-          const volume = Number(set.distance_m || 0) * setCount;
-          stats.totalDistanceM += volume; // Aggiungi al totale generale
+          const volume = Number(set.distance_m || 0) * setCount
+          stats.totalDistanceM += volume // Aggiungi al totale generale
           if (sessionCategory === 'endurance') {
-            stats.volumeByCategory.endurance.distance_m += volume;
+            stats.volumeByCategory.endurance.distance_m += volume
           }
         }
-      });
-    });
-    
+      })
+    })
+
     // Conta sessioni per categoria
     if (sessionCategory) {
-      stats.volumeByCategory[sessionCategory].sessions++;
+      stats.volumeByCategory[sessionCategory].sessions++
     }
-  });
+  })
 
-  stats.avgRPE = rpeCount > 0 ? (totalRPE / rpeCount).toFixed(1) : 0;
-  
+  stats.avgRPE = rpeCount > 0 ? (totalRPE / rpeCount).toFixed(1) : 0
+
   // Mantieni retrocompatibilità
   stats.volume = {
     distance_m: Math.round(stats.totalDistanceM),
-    tonnage_kg: Math.round(stats.totalTonnageKg),
-  };
-  
+    tonnage_kg: Math.round(stats.totalTonnageKg)
+  }
+
   // Nuova struttura dettagliata
   stats.volumeDetailed = {
     track: {
       distance_m: Math.round(stats.volumeByCategory.track.distance_m),
-      sessions: stats.volumeByCategory.track.sessions,
+      sessions: stats.volumeByCategory.track.sessions
     },
     gym: {
       tonnage_kg: Math.round(stats.volumeByCategory.gym.tonnage_kg),
-      sessions: stats.volumeByCategory.gym.sessions,
+      sessions: stats.volumeByCategory.gym.sessions
     },
     endurance: {
       distance_m: Math.round(stats.volumeByCategory.endurance.distance_m),
-      sessions: stats.volumeByCategory.endurance.sessions,
+      sessions: stats.volumeByCategory.endurance.sessions
     }
-  };
+  }
 
-  return stats;
+  return stats
 }
 
 /**
  * Calcola streak (giorni consecutivi di allenamento)
  */
 function calculateStreak(sessions) {
-  if (sessions.length === 0) return 0;
+  if (sessions.length === 0) return 0
 
   // Considera solo sessioni fino a oggi per la streak
-  const today = new Date();
+  const today = new Date()
   const sortedDates = sessions
-    .map(s => new Date(s.date))
-    .filter(d => d <= today)
-    .map(d => d.getTime())
-    .sort((a, b) => b - a);
+    .map((s) => new Date(s.date))
+    .filter((d) => d <= today)
+    .map((d) => d.getTime())
+    .sort((a, b) => b - a)
 
-  let streak = 1;
+  let streak = 1
   for (let i = 0; i < sortedDates.length - 1; i++) {
-    const diff = (sortedDates[i] - sortedDates[i + 1]) / (1000 * 60 * 60 * 24);
+    const diff = (sortedDates[i] - sortedDates[i + 1]) / (1000 * 60 * 60 * 24)
     if (Math.abs(diff - 1) < 0.1) {
-      streak++;
+      streak++
     } else {
-      break;
+      break
     }
   }
 
-  return streak;
+  return streak
 }
 
 /**
@@ -266,58 +292,58 @@ function calculateStreak(sessions) {
  * Prepara dati per grafico progressione tempi (safe date handling)
  */
 export function getProgressionChartData(raceRecords) {
-  const recordsByDistance = {};
+  const recordsByDistance = {}
 
-  raceRecords.forEach(record => {
-    const distance = record.distance_m;
+  raceRecords.forEach((record) => {
+    const distance = record.distance_m
     if (!recordsByDistance[distance]) {
-      recordsByDistance[distance] = [];
+      recordsByDistance[distance] = []
     }
-    recordsByDistance[distance].push(record);
-  });
+    recordsByDistance[distance].push(record)
+  })
 
-  const chartData = [];
+  const chartData = []
 
   Object.entries(recordsByDistance).forEach(([distance, records]) => {
     const sortedRecords = records.sort((a, b) => {
-      const dateA = new Date(a.date || a.created_at).getTime() || 0;
-      const dateB = new Date(b.date || b.created_at).getTime() || 0;
-      return dateA - dateB;
-    });
+      const dateA = new Date(a.date || a.created_at).getTime() || 0
+      const dateB = new Date(b.date || b.created_at).getTime() || 0
+      return dateA - dateB
+    })
 
     sortedRecords.forEach((record) => {
-      const dateVal = record.date || record.created_at;
-      if (!dateVal) return; // skip if missing date
+      const dateVal = record.date || record.created_at
+      if (!dateVal) return // skip if missing date
 
-      const key = `${distance}m`;
-      let item = chartData.find(d => d.date === dateVal);
+      const key = `${distance}m`
+      let item = chartData.find((d) => d.date === dateVal)
       if (!item) {
-        item = { date: dateVal };
-        chartData.push(item);
+        item = { date: dateVal }
+        chartData.push(item)
       }
 
-      item[key] = parseFloat(record.time_s.toFixed(2));
-    });
-  });
+      item[key] = parseFloat(record.time_s.toFixed(2))
+    })
+  })
 
   return chartData.sort((a, b) => {
-    const da = new Date(a.date).getTime() || 0;
-    const db = new Date(b.date).getTime() || 0;
-    return da - db;
-  });
+    const da = new Date(a.date).getTime() || 0
+    const db = new Date(b.date).getTime() || 0
+    return da - db
+  })
 }
 
 /**
  * Prepara dati per heatmap settimanale
  */
 export function getWeeklyHeatmapData(sessions) {
-  const weeklyData = {};
+  const weeklyData = {}
 
-  sessions.forEach(session => {
-    const date = new Date(session.date);
-    const year = getYear(date);
-    const week = getWeek(date);
-    const key = `${year}-W${week}`;
+  sessions.forEach((session) => {
+    const date = new Date(session.date)
+    const year = getYear(date)
+    const week = getWeek(date)
+    const key = `${year}-W${week}`
 
     if (!weeklyData[key]) {
       weeklyData[key] = {
@@ -325,63 +351,63 @@ export function getWeeklyHeatmapData(sessions) {
         sessionCount: 0,
         totalRPE: 0,
         rpeCount: 0,
-        sessions: [],
-      };
+        sessions: []
+      }
     }
 
-    weeklyData[key].sessionCount++;
-    weeklyData[key].sessions.push(session);
+    weeklyData[key].sessionCount++
+    weeklyData[key].sessions.push(session)
     if (session.rpe) {
-      weeklyData[key].totalRPE += session.rpe;
-      weeklyData[key].rpeCount++;
+      weeklyData[key].totalRPE += session.rpe
+      weeklyData[key].rpeCount++
     }
-  });
+  })
 
   // Calcola average RPE per settimana
-  const heatmapData = Object.values(weeklyData).map(w => ({
+  const heatmapData = Object.values(weeklyData).map((w) => ({
     week: w.week,
     sessionCount: w.sessionCount,
     avgRPE: w.rpeCount > 0 ? (w.totalRPE / w.rpeCount).toFixed(1) : 0,
-    intensity: w.rpeCount > 0 ? Math.round((w.totalRPE / w.rpeCount) / 10 * 100) : 0, // 0-100
-  }));
+    intensity: w.rpeCount > 0 ? Math.round((w.totalRPE / w.rpeCount / 10) * 100) : 0 // 0-100
+  }))
 
-  return heatmapData;
+  return heatmapData
 }
 
 /**
  * Calcola distribuzione tipi di allenamento
  */
 export function getSessionTypeDistribution(sessions) {
-  const distribution = {};
+  const distribution = {}
 
-  sessions.forEach(session => {
-    const type = session.type || 'altro';
-    distribution[type] = (distribution[type] || 0) + 1;
-  });
+  sessions.forEach((session) => {
+    const type = session.type || 'altro'
+    distribution[type] = (distribution[type] || 0) + 1
+  })
 
   return Object.entries(distribution).map(([type, count]) => ({
     name: type,
     value: count,
-    percentage: ((count / sessions.length) * 100).toFixed(1),
-  }));
+    percentage: ((count / sessions.length) * 100).toFixed(1)
+  }))
 }
 
 /**
  * Calcola statistiche box plot per distanza
  */
 export function getTimeSeriesStats(raceRecords, distance) {
-  const recordsForDistance = raceRecords.filter(r => r.distance_m === distance);
+  const recordsForDistance = raceRecords.filter((r) => r.distance_m === distance)
 
   if (recordsForDistance.length === 0) {
-    return null;
+    return null
   }
 
-  const times = recordsForDistance.map(r => parseFloat(r.time_s)).sort((a, b) => a - b);
-  const min = times[0];
-  const max = times[times.length - 1];
-  const q1 = times[Math.floor(times.length * 0.25)];
-  const median = times[Math.floor(times.length * 0.5)];
-  const q3 = times[Math.floor(times.length * 0.75)];
+  const times = recordsForDistance.map((r) => parseFloat(r.time_s)).sort((a, b) => a - b)
+  const min = times[0]
+  const max = times[times.length - 1]
+  const q1 = times[Math.floor(times.length * 0.25)]
+  const median = times[Math.floor(times.length * 0.5)]
+  const q3 = times[Math.floor(times.length * 0.75)]
 
   return {
     distance,
@@ -390,32 +416,32 @@ export function getTimeSeriesStats(raceRecords, distance) {
     median: parseFloat(median.toFixed(2)),
     q3: parseFloat(q3.toFixed(2)),
     max: parseFloat(max.toFixed(2)),
-    count: times.length,
-  };
+    count: times.length
+  }
 }
 
 /**
  * Prepara dati scatter plot RPE vs Performance
  */
 export function getRPEPerformanceCorrelation(sessions, raceRecords) {
-  const sessionMap = {};
-  sessions.forEach(s => {
-    sessionMap[s.id] = s;
-  });
+  const sessionMap = {}
+  sessions.forEach((s) => {
+    sessionMap[s.id] = s
+  })
 
   const scatterData = raceRecords
-    .filter(r => {
-      const session = sessionMap[r.session_id];
-      return session && session.rpe;
+    .filter((r) => {
+      const session = sessionMap[r.session_id]
+      return session && session.rpe
     })
-    .map(r => ({
+    .map((r) => ({
       rpe: sessionMap[r.session_id].rpe,
       time: parseFloat(r.time_s.toFixed(2)),
       distance: r.distance_m,
-      date: sessionMap[r.session_id].date,
-    }));
+      date: sessionMap[r.session_id].date
+    }))
 
-  return scatterData;
+  return scatterData
 }
 
 /**
@@ -423,15 +449,15 @@ export function getRPEPerformanceCorrelation(sessions, raceRecords) {
  */
 export function getInjuryTimeline(injuries, raceRecords) {
   return injuries
-    .filter(inj => inj.start_date)
-    .map(inj => {
+    .filter((inj) => inj.start_date)
+    .map((inj) => {
       // Conta record durante l'infortunio
-      const affectedRecords = raceRecords.filter(r => {
-        const rDate = new Date(r.date || r.created_at);
-        const injStart = new Date(inj.start_date);
-        const injEnd = inj.end_date ? new Date(inj.end_date) : new Date();
-        return rDate >= injStart && rDate <= injEnd;
-      });
+      const affectedRecords = raceRecords.filter((r) => {
+        const rDate = new Date(r.date || r.created_at)
+        const injStart = new Date(inj.start_date)
+        const injEnd = inj.end_date ? new Date(inj.end_date) : new Date()
+        return rDate >= injStart && rDate <= injEnd
+      })
 
       return {
         injury_type: inj.injury_type,
@@ -442,10 +468,10 @@ export function getInjuryTimeline(injuries, raceRecords) {
         duration: inj.end_date
           ? Math.floor((new Date(inj.end_date) - new Date(inj.start_date)) / (1000 * 60 * 60 * 24))
           : Math.floor((new Date() - new Date(inj.start_date)) / (1000 * 60 * 60 * 24)),
-        affectedRecords: affectedRecords.length,
-      };
+        affectedRecords: affectedRecords.length
+      }
     })
-    .sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+    .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
 }
 
 /**
@@ -455,65 +481,65 @@ export function getInjuryTimeline(injuries, raceRecords) {
  * Calcola metriche mensili (safe date handling)
  */
 export function getMonthlyMetrics(sessions, raceRecords) {
-  const monthlyData = {};
+  const monthlyData = {}
 
-  raceRecords.forEach(record => {
-    const rawDate = record.date || record.created_at;
-    const dateObj = new Date(rawDate);
+  raceRecords.forEach((record) => {
+    const rawDate = record.date || record.created_at
+    const dateObj = new Date(rawDate)
 
     if (!rawDate || Number.isNaN(dateObj.getTime())) {
-      console.warn('Data non valida trovata in record:', record);
-      return;
+      console.warn('Data non valida trovata in record:', record)
+      return
     }
 
-    const monthKey = format(dateObj, 'yyyy-MM');
+    const monthKey = format(dateObj, 'yyyy-MM')
 
     if (!monthlyData[monthKey]) {
       monthlyData[monthKey] = {
         month: monthKey,
         times: [],
-        count: 0,
-      };
+        count: 0
+      }
     }
 
-    monthlyData[monthKey].times.push(parseFloat(record.time_s));
-    monthlyData[monthKey].count++;
-  });
+    monthlyData[monthKey].times.push(parseFloat(record.time_s))
+    monthlyData[monthKey].count++
+  })
 
   return Object.values(monthlyData)
-    .map(m => ({
+    .map((m) => ({
       month: m.month,
       count: m.count,
       avg: (m.times.reduce((a, b) => a + b, 0) / m.times.length).toFixed(2),
       min: Math.min(...m.times).toFixed(2),
-      max: Math.max(...m.times).toFixed(2),
+      max: Math.max(...m.times).toFixed(2)
     }))
-    .sort((a, b) => a.month.localeCompare(b.month));
+    .sort((a, b) => a.month.localeCompare(b.month))
 }
 
 /**
  * Esporta dati in CSV
  */
 export function exportToCSV(sessions, raceRecords, fileName = 'training-stats.csv') {
-  let csv = 'Data,Tipo,RPE,Distanza,Tempo,PB\n';
+  let csv = 'Data,Tipo,RPE,Distanza,Tempo,PB\n'
 
-  const sessionMap = {};
-  sessions.forEach(s => {
-    sessionMap[s.id] = s;
-  });
+  const sessionMap = {}
+  sessions.forEach((s) => {
+    sessionMap[s.id] = s
+  })
 
-  raceRecords.forEach(record => {
-    const session = sessionMap[record.session_id];
+  raceRecords.forEach((record) => {
+    const session = sessionMap[record.session_id]
     if (session) {
-      csv += `${session.date},${session.type},${session.rpe || ''},${record.distance_m},${record.time_s},${record.is_personal_best ? 'Si' : 'No'}\n`;
+      csv += `${session.date},${session.type},${session.rpe || ''},${record.distance_m},${record.time_s},${record.is_personal_best ? 'Si' : 'No'}\n`
     }
-  });
+  })
 
-  const element = document.createElement('a');
-  element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
-  element.setAttribute('download', fileName);
-  element.style.display = 'none';
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
+  const element = document.createElement('a')
+  element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv))
+  element.setAttribute('download', fileName)
+  element.style.display = 'none'
+  document.body.appendChild(element)
+  element.click()
+  document.body.removeChild(element)
 }

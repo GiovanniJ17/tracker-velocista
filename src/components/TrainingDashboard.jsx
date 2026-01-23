@@ -1,113 +1,132 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar, ScatterChart, Scatter,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, ComposedChart
-} from 'recharts';
-import { Download, Filter, Calendar, TrendingUp } from 'lucide-react';
-import { format, subMonths } from 'date-fns';
+  LineChart,
+  Line,
+  Bar,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  ComposedChart
+} from 'recharts'
+import { Download, TrendingUp } from 'lucide-react'
+import { format } from 'date-fns'
 import {
   getStatsData,
   calculateKPIs,
   getProgressionChartData,
   getWeeklyHeatmapData,
   getSessionTypeDistribution,
-  getTimeSeriesStats,
   getRPEPerformanceCorrelation,
   getInjuryTimeline,
   getMonthlyMetrics,
-  exportToCSV,
-} from '../services/statisticsService';
+  exportToCSV
+} from '../services/statisticsService'
 import {
   getWeeklyInsight,
   getWhatIfPrediction,
-  getAdaptiveWorkoutSuggestion,
-} from '../services/aiCoachService';
-import { generateProactiveAlerts } from '../services/proactiveCoach';
-import CoachAlerts from './CoachAlerts';
+  getAdaptiveWorkoutSuggestion
+} from '../services/aiCoachService'
+import { generateProactiveAlerts } from '../services/proactiveCoach'
+import CoachAlerts from './CoachAlerts'
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
 export default function TrainingDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState('3months'); // 'week', 'month', '3months', 'custom'
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
-  const [kpis, setKpis] = useState(null);
-  const [progressionData, setProgressionData] = useState([]);
-  const [weeklyData, setWeeklyData] = useState([]);
-  const [distributionData, setDistributionData] = useState([]);
-  const [scatterData, setScatterData] = useState([]);
-  const [injuryTimeline, setInjuryTimeline] = useState([]);
-  const [monthlyMetrics, setMonthlyMetrics] = useState([]);
-  const [selectedDistance, setSelectedDistance] = useState(null);
-  const [rawData, setRawData] = useState({ sessions: [], raceRecords: [], trainingRecords: [], strengthRecords: [], injuries: [] });
-  const [coachInsight, setCoachInsight] = useState(null);
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachError, setCoachError] = useState(null);
-  const [whatIfInput, setWhatIfInput] = useState({ distance: null, exercise: '', targetWeight: '' });
-  const [whatIfResult, setWhatIfResult] = useState(null);
-  const [whatIfLoading, setWhatIfLoading] = useState(false);
-  const [adaptiveFocus, setAdaptiveFocus] = useState('');
-  const [adaptiveResult, setAdaptiveResult] = useState(null);
-  const [alerts, setAlerts] = useState([]);
-  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
-  const [adaptiveError, setAdaptiveError] = useState(null);
+  const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState('3months') // 'week', 'month', '3months', 'custom'
+  const [startDate, _setStartDate] = useState(null)
+  const [endDate, _setEndDate] = useState(null)
+  const [kpis, setKpis] = useState(null)
+  const [progressionData, setProgressionData] = useState([])
+  const [weeklyData, setWeeklyData] = useState([])
+  const [distributionData, setDistributionData] = useState([])
+  const [scatterData, setScatterData] = useState([])
+  const [injuryTimeline, setInjuryTimeline] = useState([])
+  const [monthlyMetrics, setMonthlyMetrics] = useState([])
+  const [selectedDistance, setSelectedDistance] = useState(null)
+  const [rawData, setRawData] = useState({
+    sessions: [],
+    raceRecords: [],
+    trainingRecords: [],
+    strengthRecords: [],
+    injuries: []
+  })
+  const [coachInsight, setCoachInsight] = useState(null)
+  const [coachLoading, setCoachLoading] = useState(false)
+  const [coachError, setCoachError] = useState(null)
+  const [whatIfInput, setWhatIfInput] = useState({
+    targetDistance: null,
+    baseMode: 'pb',
+    pbKey: '',
+    baseDistance: '',
+    baseTime: ''
+  })
+  const [whatIfResult, setWhatIfResult] = useState(null)
+  const [whatIfLoading, setWhatIfLoading] = useState(false)
+  const [adaptiveFocus, setAdaptiveFocus] = useState('')
+  const [adaptiveResult, setAdaptiveResult] = useState(null)
+  const [alerts, setAlerts] = useState([])
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false)
+  const [adaptiveError, setAdaptiveError] = useState(null)
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [period, startDate, endDate]);
-
-  const loadDashboardData = async () => {
-    setLoading(true);
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true)
 
     // Calcola date in base al period
-    const end = endDate || new Date();
-    let start = startDate;
+    const end = endDate || new Date()
+    let start = startDate
 
     if (!start) {
       switch (period) {
         case 'week':
-          start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
+          start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+          break
         case 'month':
-          start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
+          start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+          break
         case '3months':
-          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
-          break;
+          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+          break
         default:
-          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
+          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
       }
     }
 
-    const result = await getStatsData(start, end);
+    const result = await getStatsData(start, end)
 
     if (result.success) {
-      const { sessions, raceRecords, trainingRecords, strengthRecords, injuries } = result.data;
-      setRawData({ sessions, raceRecords, trainingRecords, strengthRecords, injuries });
+      const { sessions, raceRecords, trainingRecords, strengthRecords, injuries } = result.data
+      setRawData({ sessions, raceRecords, trainingRecords, strengthRecords, injuries })
 
       // Calcola tutte le metriche
-      const kpisCalc = calculateKPIs(sessions, raceRecords, strengthRecords, trainingRecords);
-      setKpis(kpisCalc);
+      const kpisCalc = calculateKPIs(sessions, raceRecords, strengthRecords, trainingRecords)
+      setKpis(kpisCalc)
 
-      const progression = getProgressionChartData(raceRecords);
-      setProgressionData(progression);
+      const progression = getProgressionChartData(raceRecords)
+      setProgressionData(progression)
 
-      const weekly = getWeeklyHeatmapData(sessions);
-      setWeeklyData(weekly);
+      const weekly = getWeeklyHeatmapData(sessions)
+      setWeeklyData(weekly)
 
-      const distribution = getSessionTypeDistribution(sessions);
-      setDistributionData(distribution);
+      const distribution = getSessionTypeDistribution(sessions)
+      setDistributionData(distribution)
 
-      const scatter = getRPEPerformanceCorrelation(sessions, raceRecords);
-      setScatterData(scatter);
+      const scatter = getRPEPerformanceCorrelation(sessions, raceRecords)
+      setScatterData(scatter)
 
-      const injuryTl = getInjuryTimeline(injuries, raceRecords);
-      setInjuryTimeline(injuryTl);
+      const injuryTl = getInjuryTimeline(injuries, raceRecords)
+      setInjuryTimeline(injuryTl)
 
-      const monthly = getMonthlyMetrics(sessions, raceRecords);
-      setMonthlyMetrics(monthly);
+      const monthly = getMonthlyMetrics(sessions, raceRecords)
+      setMonthlyMetrics(monthly)
 
       // Genera gli alert proattivi del coach
       try {
@@ -117,130 +136,205 @@ export default function TrainingDashboard() {
           strengthRecords,
           trainingRecords,
           injuries
-        );
-        setAlerts(detectedAlerts || []);
+        )
+        setAlerts(detectedAlerts || [])
       } catch (err) {
-        console.error('Errore generazione alert:', err);
-        setAlerts([]);
+        console.error('Errore generazione alert:', err)
+        setAlerts([])
       }
     }
 
-    setLoading(false);
-  };
+    setLoading(false)
+  }, [endDate, period, startDate])
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
 
   const availableDistances = useMemo(() => {
-    const keys = new Set();
+    const keys = new Set()
     progressionData.forEach((d) => {
       Object.keys(d)
         .filter((k) => k !== 'date')
-        .forEach((k) => keys.add(parseInt(k)));
-    });
-    return Array.from(keys).sort((a, b) => a - b);
-  }, [progressionData]);
+        .forEach((k) => keys.add(parseInt(k)))
+    })
+    return Array.from(keys).sort((a, b) => a - b)
+  }, [progressionData])
 
-  const strengthExerciseOptions = useMemo(() => {
-    const counts = rawData.strengthRecords.reduce((acc, s) => {
-      const name = s.exercise_name || 'Senza nome';
-      acc[name] = (acc[name] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rawData.strengthRecords]);
+  const distanceOptions = useMemo(() => {
+    const distances = new Set(availableDistances)
+    rawData.raceRecords.forEach((r) => {
+      if (r.distance_m) distances.add(Number(r.distance_m))
+    })
+    return Array.from(distances).sort((a, b) => a - b)
+  }, [availableDistances, rawData.raceRecords])
+
+  const pbOptions = useMemo(() => {
+    const pbs = rawData.raceRecords
+      .filter((r) => r.is_personal_best && r.distance_m && r.time_s)
+      .sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at))
+      .slice(0, 8)
+      .map((r) => ({
+        distance_m: Number(r.distance_m),
+        time_s: Number(r.time_s),
+        date: r.date || r.created_at
+      }))
+
+    if (pbs.length) return pbs
+
+    const bestByDistance = {}
+    rawData.raceRecords.forEach((r) => {
+      if (!r.distance_m || !r.time_s) return
+      const distance = Number(r.distance_m)
+      const time = Number(r.time_s)
+      if (!bestByDistance[distance] || time < bestByDistance[distance].time_s) {
+        bestByDistance[distance] = {
+          distance_m: distance,
+          time_s: time,
+          date: r.date || r.created_at
+        }
+      }
+    })
+    return Object.values(bestByDistance).sort((a, b) => a.distance_m - b.distance_m)
+  }, [rawData.raceRecords])
 
   const scatterDistances = useMemo(() => {
-    const keys = new Set(scatterData.map((d) => d.distance));
-    return Array.from(keys).sort((a, b) => a - b);
-  }, [scatterData]);
+    const keys = new Set(scatterData.map((d) => d.distance))
+    return Array.from(keys).sort((a, b) => a - b)
+  }, [scatterData])
 
   useEffect(() => {
-    if (availableDistances.length === 0) return;
-    setSelectedDistance((prev) => (prev && availableDistances.includes(prev) ? prev : availableDistances[0]));
-  }, [availableDistances]);
+    if (availableDistances.length === 0) return
+    setSelectedDistance((prev) =>
+      prev && availableDistances.includes(prev) ? prev : availableDistances[0]
+    )
+  }, [availableDistances])
 
   useEffect(() => {
-    if (scatterDistances.length === 0) return;
-    setSelectedDistance((prev) => (prev && scatterDistances.includes(prev) ? prev : scatterDistances[0]));
-  }, [scatterDistances]);
+    if (scatterDistances.length === 0) return
+    setSelectedDistance((prev) =>
+      prev && scatterDistances.includes(prev) ? prev : scatterDistances[0]
+    )
+  }, [scatterDistances])
 
   useEffect(() => {
-    if (!whatIfInput.distance && availableDistances.length) {
-      setWhatIfInput((p) => ({ ...p, distance: availableDistances[0] }));
+    if (!whatIfInput.targetDistance && distanceOptions.length) {
+      setWhatIfInput((p) => ({ ...p, targetDistance: distanceOptions[0] }))
     }
-  }, [availableDistances, whatIfInput.distance]);
+  }, [distanceOptions, whatIfInput.targetDistance])
 
   useEffect(() => {
-    if (!whatIfInput.exercise && strengthExerciseOptions.length) {
-      setWhatIfInput((p) => ({ ...p, exercise: strengthExerciseOptions[0].name }));
-    }
-  }, [strengthExerciseOptions, whatIfInput.exercise]);
+    if (whatIfInput.pbKey || !pbOptions.length) return
+    const pb = pbOptions[0]
+    setWhatIfInput((p) => ({
+      ...p,
+      pbKey: `${pb.distance_m}-${pb.time_s}`,
+      baseDistance: pb.distance_m,
+      baseTime: pb.time_s.toFixed(2)
+    }))
+  }, [pbOptions, whatIfInput.pbKey])
 
   const handleExportCSV = () => {
-    exportToCSV(rawData.sessions, rawData.raceRecords, `training-stats-${format(new Date(), 'yyyy-MM-dd')}.csv`);
-  };
+    exportToCSV(
+      rawData.sessions,
+      rawData.raceRecords,
+      `training-stats-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    )
+  }
 
   const handleGenerateInsight = async () => {
-    if (!rawData.sessions.length && !rawData.raceRecords.length) return;
-    setCoachLoading(true);
-    setCoachError(null);
-    setCoachInsight(null);
+    if (!rawData.sessions.length && !rawData.raceRecords.length) return
+    setCoachLoading(true)
+    setCoachError(null)
+    setCoachInsight(null)
     const payload = {
       sessions: rawData.sessions,
       raceRecords: rawData.raceRecords,
       strengthRecords: rawData.strengthRecords,
-      kpis: kpis || {},
-      progressionData,
-    };
-    const res = await getWeeklyInsight(payload);
-    setCoachLoading(false);
-    if (res.success) {
-      setCoachInsight(res.data);
-    } else {
-      setCoachError(res.error);
+      kpis: kpis || {}
     }
-  };
+    const res = await getWeeklyInsight(payload)
+    setCoachLoading(false)
+    if (res.success) {
+      setCoachInsight(res.data)
+    } else {
+      setCoachError(res.error)
+    }
+  }
+
+  const parseTimeInput = (value) => {
+    if (value === null || value === undefined) return null
+    const text = String(value).trim()
+    if (!text) return null
+    if (text.includes(':')) {
+      const [minsPart, secsPart] = text.split(':')
+      const mins = Number(minsPart)
+      const secs = Number(secsPart)
+      if (Number.isNaN(mins) || Number.isNaN(secs)) return null
+      return mins * 60 + secs
+    }
+    const numeric = Number(text)
+    return Number.isNaN(numeric) ? null : numeric
+  }
+
+  const formatSeconds = (value) => {
+    if (value === null || value === undefined) return '-'
+    const seconds = Number(value)
+    if (Number.isNaN(seconds)) return '-'
+    const mins = Math.floor(seconds / 60)
+    const secs = (seconds % 60).toFixed(2)
+    if (mins > 0) {
+      return `${mins}:${secs.padStart(5, '0')}`
+    }
+    return `${secs}s`
+  }
 
   const handleWhatIf = async () => {
-    const distance = whatIfInput.distance || availableDistances[0];
-    const exercise = whatIfInput.exercise || (strengthExerciseOptions[0]?.name);
-    const targetWeight = Number(whatIfInput.targetWeight);
-    if (!distance || !exercise || !targetWeight) return;
-    setWhatIfLoading(true);
+    const targetDistance = whatIfInput.targetDistance || distanceOptions[0]
+    let baseDistance = whatIfInput.baseDistance
+    let baseTime = parseTimeInput(whatIfInput.baseTime)
+
+    if (whatIfInput.baseMode === 'pb' && whatIfInput.pbKey) {
+      const [distPart, timePart] = whatIfInput.pbKey.split('-')
+      baseDistance = Number(distPart)
+      baseTime = Number(timePart)
+    }
+
+    if (!targetDistance) return
+    setWhatIfLoading(true)
     const res = await getWhatIfPrediction({
-      distance_m: distance,
-      target_weight: targetWeight,
-      exercise_name: exercise,
-      raceRecords: rawData.raceRecords,
-      strengthRecords: rawData.strengthRecords,
-    });
-    setWhatIfLoading(false);
-    setWhatIfResult(res.success ? res.data : { error: res.error });
-  };
+      target_distance_m: targetDistance,
+      base_distance_m: baseDistance,
+      base_time_s: baseTime,
+      recent_pbs: pbOptions
+    })
+    setWhatIfLoading(false)
+    setWhatIfResult(res.success ? res.data : { error: res.error })
+  }
 
   const handleAdaptiveSuggestion = async () => {
-    if (!rawData.sessions.length) return;
-    setAdaptiveLoading(true);
-    setAdaptiveError(null);
+    if (!rawData.sessions.length) return
+    setAdaptiveLoading(true)
+    setAdaptiveError(null)
     const res = await getAdaptiveWorkoutSuggestion({
       recentSessions: rawData.sessions,
       upcomingFocus: adaptiveFocus,
-      raceRecords: rawData.raceRecords,
-    });
-    setAdaptiveLoading(false);
+      raceRecords: rawData.raceRecords
+    })
+    setAdaptiveLoading(false)
     if (res.success) {
-      setAdaptiveResult(res.data);
+      setAdaptiveResult(res.data)
     } else {
-      setAdaptiveError(res.error);
+      setAdaptiveError(res.error)
     }
-  };
+  }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-gray-400">Caricamento statistiche...</div>
       </div>
-    );
+    )
   }
 
   return (
@@ -317,52 +411,129 @@ export default function TrainingDashboard() {
           <h2 className="text-lg font-bold text-white mb-2">What-if Prestazione</h2>
           <div className="space-y-2 text-sm">
             <div>
-              <label className="text-gray-400 text-xs">Distanza</label>
+              <label className="text-gray-400 text-xs">Distanza target</label>
               <select
-                value={whatIfInput.distance || availableDistances[0] || ''}
-                onChange={(e) => setWhatIfInput((p) => ({ ...p, distance: parseInt(e.target.value) }))}
+                value={whatIfInput.targetDistance || distanceOptions[0] || ''}
+                onChange={(e) =>
+                  setWhatIfInput((p) => ({ ...p, targetDistance: parseInt(e.target.value) }))
+                }
                 className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
               >
-                {availableDistances.map((dist) => (
-                  <option key={dist} value={dist}>{dist}m</option>
+                {distanceOptions.map((dist) => (
+                  <option key={dist} value={dist}>
+                    {dist}m
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-gray-400 text-xs">Esercizio forza</label>
-              <select
-                value={whatIfInput.exercise || (strengthExerciseOptions[0]?.name) || ''}
-                onChange={(e) => setWhatIfInput((p) => ({ ...p, exercise: e.target.value }))}
-                className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-              >
-                {strengthExerciseOptions.map((ex) => (
-                  <option key={ex.name} value={ex.name}>{ex.name} ({ex.count})</option>
-                ))}
-              </select>
+              <label className="text-gray-400 text-xs">Riferimento PB</label>
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={() => {
+                    const pb = pbOptions[0]
+                    setWhatIfInput((p) => ({
+                      ...p,
+                      baseMode: 'pb',
+                      pbKey: p.pbKey || (pb ? `${pb.distance_m}-${pb.time_s}` : ''),
+                      baseDistance: p.baseDistance || (pb ? pb.distance_m : ''),
+                      baseTime: p.baseTime || (pb ? pb.time_s.toFixed(2) : '')
+                    }))
+                  }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs ${whatIfInput.baseMode === 'pb' ? 'bg-primary-600 text-white' : 'bg-slate-700 text-gray-300 border border-slate-600'}`}
+                >
+                  Usa PB recente
+                </button>
+                <button
+                  onClick={() => setWhatIfInput((p) => ({ ...p, baseMode: 'manual' }))}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs ${whatIfInput.baseMode === 'manual' ? 'bg-primary-600 text-white' : 'bg-slate-700 text-gray-300 border border-slate-600'}`}
+                >
+                  Inserisci manuale
+                </button>
+              </div>
             </div>
-            <div>
-              <label className="text-gray-400 text-xs">Peso target (kg)</label>
-              <input
-                type="number"
-                value={whatIfInput.targetWeight}
-                onChange={(e) => setWhatIfInput((p) => ({ ...p, targetWeight: e.target.value }))}
-                className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                placeholder="Es. 150"
-              />
-            </div>
+            {whatIfInput.baseMode === 'pb' && (
+              <div>
+                <label className="text-gray-400 text-xs">PB recente</label>
+                <select
+                  value={whatIfInput.pbKey || ''}
+                  onChange={(e) => {
+                    const [distPart, timePart] = e.target.value.split('-')
+                    setWhatIfInput((p) => ({
+                      ...p,
+                      pbKey: e.target.value,
+                      baseDistance: Number(distPart),
+                      baseTime: Number(timePart).toFixed(2)
+                    }))
+                  }}
+                  className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                >
+                  {pbOptions.map((pb) => (
+                    <option
+                      key={`${pb.distance_m}-${pb.time_s}`}
+                      value={`${pb.distance_m}-${pb.time_s}`}
+                    >
+                      {pb.distance_m}m - {formatSeconds(pb.time_s)}
+                    </option>
+                  ))}
+                </select>
+                {pbOptions.length === 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Nessun PB disponibile, usa inserimento manuale.
+                  </div>
+                )}
+              </div>
+            )}
+            {whatIfInput.baseMode === 'manual' && (
+              <>
+                <div>
+                  <label className="text-gray-400 text-xs">Distanza riferimento (m)</label>
+                  <input
+                    type="number"
+                    value={whatIfInput.baseDistance}
+                    onChange={(e) =>
+                      setWhatIfInput((p) => ({ ...p, baseDistance: e.target.value }))
+                    }
+                    className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                    placeholder="Es. 100"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs">Tempo riferimento</label>
+                  <input
+                    type="text"
+                    value={whatIfInput.baseTime}
+                    onChange={(e) => setWhatIfInput((p) => ({ ...p, baseTime: e.target.value }))}
+                    className="w-full mt-1 px-2 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                    placeholder="Es. 11.24 oppure 0:11.24"
+                  />
+                </div>
+              </>
+            )}
             <button
               onClick={handleWhatIf}
-              disabled={whatIfLoading || !availableDistances.length || !strengthExerciseOptions.length}
+              disabled={whatIfLoading || !distanceOptions.length}
               className="w-full px-3 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm"
             >
               {whatIfLoading ? 'Calcolo...' : 'Stima tempo atteso'}
             </button>
             {whatIfResult && (
               <div className="text-gray-200 text-sm space-y-1 bg-slate-700 border border-slate-600 rounded p-2">
-                {whatIfResult.error && <div className="text-red-400 text-xs">{whatIfResult.error}</div>}
-                {whatIfResult.projection && <div><span className="text-gray-400">Proiezione:</span> {whatIfResult.projection}</div>}
-                {whatIfResult.rationale && <div><span className="text-gray-400">Razionale:</span> {whatIfResult.rationale}</div>}
-                {whatIfResult.caution && <div><span className="text-gray-400">Nota:</span> {whatIfResult.caution}</div>}
+                {whatIfResult.error && (
+                  <div className="text-red-400 text-xs">{whatIfResult.error}</div>
+                )}
+                {whatIfResult.estimate_s !== undefined && (
+                  <div>
+                    <span className="text-gray-400">Stima:</span>{' '}
+                    {formatSeconds(whatIfResult.estimate_s)} ({formatSeconds(whatIfResult.low_s)} -{' '}
+                    {formatSeconds(whatIfResult.high_s)})
+                  </div>
+                )}
+                {whatIfResult.explanation && (
+                  <div>
+                    <span className="text-gray-400">Spiegazione:</span> {whatIfResult.explanation}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -400,7 +571,9 @@ export default function TrainingDashboard() {
               Progressione Tempi
             </h2>
             {availableDistances.length > 0 && (
-              <div className="text-xs text-gray-400">Distanze: {availableDistances.join(', ')}m</div>
+              <div className="text-xs text-gray-400">
+                Distanze: {availableDistances.join(', ')}m
+              </div>
             )}
           </div>
           <ResponsiveContainer width="100%" height={400}>
@@ -484,7 +657,9 @@ export default function TrainingDashboard() {
                 className="px-3 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
               >
                 {scatterDistances.map((dist) => (
-                  <option key={dist} value={dist}>{dist}m</option>
+                  <option key={dist} value={dist}>
+                    {dist}m
+                  </option>
                 ))}
               </select>
             )}
@@ -492,11 +667,23 @@ export default function TrainingDashboard() {
           <ResponsiveContainer width="100%" height={350}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis type="number" dataKey="rpe" name="RPE" stroke="#94a3b8" label={{ value: 'RPE', position: 'insideBottomRight', offset: -5 }} />
-              <YAxis type="number" dataKey="time" name="Tempo" stroke="#94a3b8" label={{ value: 'Secondi', angle: -90, position: 'insideLeft' }} />
+              <XAxis
+                type="number"
+                dataKey="rpe"
+                name="RPE"
+                stroke="#94a3b8"
+                label={{ value: 'RPE', position: 'insideBottomRight', offset: -5 }}
+              />
+              <YAxis
+                type="number"
+                dataKey="time"
+                name="Tempo"
+                stroke="#94a3b8"
+                label={{ value: 'Secondi', angle: -90, position: 'insideLeft' }}
+              />
               <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }} />
               <Scatter
-                data={scatterData.filter(d => d.distance === selectedDistance)}
+                data={scatterData.filter((d) => d.distance === selectedDistance)}
                 fill="#3b82f6"
                 name={`${selectedDistance}m`}
               />
@@ -535,11 +722,15 @@ export default function TrainingDashboard() {
                     <h3 className="font-bold text-white">{injury.injury_type}</h3>
                     <p className="text-sm text-gray-400">{injury.body_part}</p>
                   </div>
-                  <span className={`px-2 py-1 rounded text-sm font-bold ${
-                    injury.severity === 'minor' ? 'bg-yellow-600' :
-                    injury.severity === 'moderate' ? 'bg-orange-600' :
-                    'bg-red-600'
-                  } text-white`}>
+                  <span
+                    className={`px-2 py-1 rounded text-sm font-bold ${
+                      injury.severity === 'minor'
+                        ? 'bg-yellow-600'
+                        : injury.severity === 'moderate'
+                          ? 'bg-orange-600'
+                          : 'bg-red-600'
+                    } text-white`}
+                  >
                     {injury.severity}
                   </span>
                 </div>
@@ -567,7 +758,7 @@ export default function TrainingDashboard() {
             disabled={adaptiveLoading || !rawData.sessions.length}
             className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg text-sm"
           >
-            {adaptiveLoading ? 'Analisi...' : 'Suggerisci' }
+            {adaptiveLoading ? 'Analisi...' : 'Suggerisci'}
           </button>
         </div>
         <div className="space-y-2">
@@ -595,7 +786,9 @@ export default function TrainingDashboard() {
             </div>
           )}
           {!adaptiveResult && !adaptiveLoading && !adaptiveError && (
-            <div className="text-sm text-gray-500">Premi "Suggerisci" per un check rapido su carico e possibili modifiche.</div>
+            <div className="text-sm text-gray-500">
+              Premi "Suggerisci" per un check rapido su carico e possibili modifiche.
+            </div>
           )}
         </div>
       </div>
@@ -603,9 +796,11 @@ export default function TrainingDashboard() {
       {/* Empty State */}
       {progressionData.length === 0 && (
         <div className="bg-slate-800 rounded-xl p-12 border border-slate-700 text-center">
-          <p className="text-gray-400 text-lg">Nessun dato disponibile per il periodo selezionato</p>
+          <p className="text-gray-400 text-lg">
+            Nessun dato disponibile per il periodo selezionato
+          </p>
         </div>
       )}
     </div>
-  );
+  )
 }

@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { X } from 'lucide-react';
-import { updateTrainingSession } from '../../services/trainingService';
+import { useState } from 'react'
+import { X } from 'lucide-react'
+import { updateTrainingSession } from '../../services/trainingService'
 
 export default function SessionEditor({ session, onClose, onSave }) {
   const [formData, setFormData] = useState({
@@ -9,10 +9,10 @@ export default function SessionEditor({ session, onClose, onSave }) {
     location: session.location || '',
     rpe: session.rpe || '',
     feeling: session.feeling || '',
-    notes: session.notes || '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+    notes: session.notes || ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
 
   const types = [
     { value: 'pista', label: 'Pista' },
@@ -22,40 +22,40 @@ export default function SessionEditor({ session, onClose, onSave }) {
     { value: 'test', label: 'Test' },
     { value: 'scarico', label: 'Scarico' },
     { value: 'recupero', label: 'Recupero' },
-    { value: 'altro', label: 'Altro' },
-  ];
+    { value: 'altro', label: 'Altro' }
+  ]
 
   const feelings = [
     { value: 'excellent', label: '😄 Ottimo' },
     { value: 'good', label: '🙂 Buono' },
     { value: 'neutral', label: '😐 Neutro' },
     { value: 'tired', label: '😴 Stanco' },
-    { value: 'bad', label: '😞 Male' },
-  ];
+    { value: 'bad', label: '😞 Male' }
+  ]
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
+    const { name, value } = e.target
+    setFormData((prev) => ({
       ...prev,
-      [name]: value === '' ? null : value,
-    }));
-  };
+      [name]: value === '' ? null : value
+    }))
+  }
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
 
-    const result = await updateTrainingSession(session.id, formData);
-    
+    const result = await updateTrainingSession(session.id, formData)
+
     if (result.success) {
-      setSaving(false);
-      onSave();
+      setSaving(false)
+      onSave()
     } else {
-      setError(result.error);
-      setSaving(false);
+      setError(result.error)
+      setSaving(false)
     }
-  };
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -63,10 +63,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
         {/* Header */}
         <div className="sticky top-0 bg-slate-900 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
           <h3 className="text-xl font-bold text-white">Modifica Sessione</h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-700 rounded-lg transition"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg transition">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
@@ -101,7 +98,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
               onChange={handleChange}
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-primary-500 transition"
             >
-              {types.map(t => (
+              {types.map((t) => (
                 <option key={t.value} value={t.value}>
                   {t.label}
                 </option>
@@ -124,7 +121,9 @@ export default function SessionEditor({ session, onClose, onSave }) {
 
           {/* RPE */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">RPE (Perceived Exertion) 0-10</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              RPE (Perceived Exertion) 0-10
+            </label>
             <input
               type="number"
               name="rpe"
@@ -147,7 +146,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
               className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-primary-500 transition"
             >
               <option value="">Seleziona...</option>
-              {feelings.map(f => (
+              {feelings.map((f) => (
                 <option key={f.value} value={f.value}>
                   {f.label}
                 </option>
@@ -188,5 +187,5 @@ export default function SessionEditor({ session, onClose, onSave }) {
         </form>
       </div>
     </div>
-  );
+  )
 }

@@ -3,30 +3,30 @@
  * Mostra domande dall'AI quando c'è ambiguità nei dati
  */
 
-import { useState } from 'react';
+import { useState } from 'react'
 
 export default function AmbiguityModal({ questions, onResolve, onSkip }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [answers, setAnswers] = useState({})
 
-  if (!questions || questions.length === 0) return null;
+  if (!questions || questions.length === 0) return null
 
-  const currentQuestion = questions[currentIndex];
-  const isLast = currentIndex === questions.length - 1;
+  const currentQuestion = questions[currentIndex]
+  const isLast = currentIndex === questions.length - 1
 
   const handleAnswer = (value) => {
     const newAnswers = {
       ...answers,
       [currentQuestion.field]: value
-    };
-    setAnswers(newAnswers);
+    }
+    setAnswers(newAnswers)
 
     if (isLast) {
-      onResolve(newAnswers);
+      onResolve(newAnswers)
     } else {
-      setCurrentIndex(currentIndex + 1);
+      setCurrentIndex(currentIndex + 1)
     }
-  };
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -48,17 +48,15 @@ export default function AmbiguityModal({ questions, onResolve, onSkip }) {
 
         {/* Question */}
         <div className="mb-6">
-          <p className="text-gray-700 dark:text-gray-300 mb-4">
-            {currentQuestion.question}
-          </p>
+          <p className="text-gray-700 dark:text-gray-300 mb-4">{currentQuestion.question}</p>
 
           {/* Options */}
           {currentQuestion.options ? (
             <div className="space-y-2">
               {currentQuestion.options.map((option, idx) => {
                 // Gestisce sia il vecchio formato (stringhe) che il nuovo (oggetti {label, value})
-                const label = typeof option === 'object' ? option.label : option;
-                const value = typeof option === 'object' ? option.value : option;
+                const label = typeof option === 'object' ? option.label : option
+                const value = typeof option === 'object' ? option.value : option
 
                 return (
                   <button
@@ -69,11 +67,9 @@ export default function AmbiguityModal({ questions, onResolve, onSkip }) {
                              hover:bg-blue-50 dark:hover:bg-blue-900/20 
                              transition-colors"
                   >
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {label}
-                    </span>
+                    <span className="text-gray-900 dark:text-white font-medium">{label}</span>
                   </button>
-                );
+                )
               })}
             </div>
           ) : (
@@ -85,7 +81,7 @@ export default function AmbiguityModal({ questions, onResolve, onSkip }) {
                        bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.target.value.trim()) {
-                  handleAnswer(e.target.value.trim());
+                  handleAnswer(e.target.value.trim())
                 }
               }}
             />
@@ -114,5 +110,5 @@ export default function AmbiguityModal({ questions, onResolve, onSkip }) {
         </div>
       </div>
     </div>
-  );
+  )
 }

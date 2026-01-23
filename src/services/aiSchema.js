@@ -142,7 +142,7 @@ export const TRAINING_SESSION_SCHEMA = {
           },
           question: {
             type: 'string',
-            description: 'Domanda da fare all\'utente'
+            description: "Domanda da fare all'utente"
           },
           options: {
             type: 'array',
@@ -177,18 +177,18 @@ export const TRAINING_SESSION_SCHEMA = {
     }
   },
   required: ['session', 'groups']
-};
+}
 
 /**
  * Helper per costruire la request con schema
  * NOTA: Il Worker usa JSON mode nativo di Gemini, non lo schema strutturato
  */
-export function buildSchemaRequest(provider, messages, schema = TRAINING_SESSION_SCHEMA) {
+export function buildSchemaRequest(provider, messages) {
   return {
     provider,
     messages,
     model: 'gemini-2.5-flash',
     responseFormat: { type: 'json_object' }
-    // Nota: Rimuovi responseSchema perché il Worker lo gestisce internamente
-  };
+    // Nota: responseSchema non compatibile con l'API Gemini v1beta
+  }
 }

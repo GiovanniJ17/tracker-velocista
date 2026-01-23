@@ -2,13 +2,13 @@
 
 /**
  * 🔥 Stress Test Configuration & Runner
- * 
+ *
  * Permette di eseguire diversi profili di test stress:
  * - quick: 10 sessioni, 5 utenti (30 secondi)
  * - standard: 50 sessioni, 20 utenti (1 minuto)
  * - heavy: 100 sessioni, 50 utenti (2-3 minuti)
  * - full: 365 sessioni, 100 utenti (5-10 minuti) - TEST PRODUZIONE
- * 
+ *
  * Uso:
  *   npm run test:stress quick
  *   npm run test:stress standard
@@ -16,11 +16,11 @@
  *   npm run test:stress full
  */
 
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { spawn } from 'child_process'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Configurazioni predefinite
 const testProfiles = {
@@ -48,27 +48,27 @@ const testProfiles = {
     description: '💪 FULL TEST (365 sessioni, 100 utenti) - 5-10 minuti',
     useCase: '1 anno di dati + carico massimo (TEST PRODUZIONE)'
   }
-};
-
-const profile = process.argv[2] || 'standard';
-
-if (!testProfiles[profile]) {
-  console.error('❌ Profilo non riconosciuto.');
-  console.error('\nProfili disponibili:');
-  Object.entries(testProfiles).forEach(([key, config]) => {
-    console.error(`  ${key}: ${config.description}`);
-    console.error(`     👉 ${config.useCase}`);
-  });
-  process.exit(1);
 }
 
-const config = testProfiles[profile];
+const profile = process.argv[2] || 'standard'
 
-console.log(`\n🔥 ${config.description}`);
-console.log(`📌 ${config.useCase}\n`);
+if (!testProfiles[profile]) {
+  console.error('❌ Profilo non riconosciuto.')
+  console.error('\nProfili disponibili:')
+  Object.entries(testProfiles).forEach(([key, config]) => {
+    console.error(`  ${key}: ${config.description}`)
+    console.error(`     👉 ${config.useCase}`)
+  })
+  process.exit(1)
+}
+
+const config = testProfiles[profile]
+
+console.log(`\n🔥 ${config.description}`)
+console.log(`📌 ${config.useCase}\n`)
 
 // Esegui lo script principale con variabili d'ambiente
-const scriptPath = join(__dirname, 'tests', 'massive-stress-test.js');
+const scriptPath = join(__dirname, 'tests', 'massive-stress-test.js')
 const child = spawn('node', [scriptPath], {
   cwd: process.cwd(),
   stdio: 'inherit',
@@ -77,8 +77,8 @@ const child = spawn('node', [scriptPath], {
     STRESS_TEST_SESSIONS: config.sessions.toString(),
     STRESS_TEST_USERS: config.users.toString()
   }
-});
+})
 
 child.on('exit', (code) => {
-  process.exit(code);
-});
+  process.exit(code)
+})

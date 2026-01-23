@@ -2,15 +2,15 @@
  * AI Training Parser Service
  * Converte descrizioni di allenamento in linguaggio naturale in dati strutturati
  * Supporta input con più giorni nello stesso testo e data automatica per ogni giorno
- * 
+ *
  * Features:
  * - Context-aware: conosce PB attuali, infortuni, pattern ricorrenti
  * - Anomaly detection: rileva dati sospetti (tempi impossibili, pesi anomali)
  * - Structured output: usa JSON schema nativo di Gemini
  */
 
-import { getAthleteContext, detectAnomalies } from './contextService.js';
-import { TRAINING_SESSION_SCHEMA, buildSchemaRequest } from './aiSchema.js';
+import { getAthleteContext } from './contextService.js'
+import { buildSchemaRequest } from './aiSchema.js'
 
 const AI_SYSTEM_PROMPT = `You are an expert Italian training data parser. Extract training data with EXTREME PRECISION.
 
@@ -131,311 +131,297 @@ EXAMPLES:
    {exercise_name: "Sprint 300m", sets:1, distance_m:300, time_s:36.2, recovery_s:null}
    NOT 35 seconds - that's the goal.
 
-OUTPUT: Valid JSON ONLY. NO markdown, NO code blocks, NO explanations.`;
-
-const RESPONSE_FORMAT = {
-  session: {
-    date: "YYYY-MM-DD",
-    title: "Titolo della sessione",
-    type: "pista|palestra|strada|gara|test|scarico|recupero|altro",
-    location: "Location (opzionale)",
-    rpe: "0-10 (opzionale)",
-    feeling: "Come ti sei sentito (opzionale)",
-    notes: "Note generali (opzionale)"
-  },
-  groups: [
-    {
-      name: "Nome gruppo (es: Riscaldamento, Lavoro principale, Palestra)",
-      order_index: 0,
-      notes: "Note gruppo (opzionale)",
-      sets: [
-        {
-          exercise_name: "Nome esercizio standardizzato",
-          category: "sprint|jump|lift|endurance|mobility|drill|other",
-          sets: 1,
-          reps: 1,
-          weight_kg: null,
-          distance_m: null,
-          time_s: null,
-          recovery_s: null,
-          notes: "Note specifiche (opzionale)",
-          details: {}
-        }
-      ]
-    }
-  ]
-};
+OUTPUT: Valid JSON ONLY. NO markdown, NO code blocks, NO explanations.`
 
 const WEEKDAY_INDEX = {
   lunedi: 1,
-  'lunedì': 1,
+  lunedì: 1,
   martedi: 2,
-  'martedì': 2,
+  martedì: 2,
   mercoledi: 3,
-  'mercoledì': 3,
+  mercoledì: 3,
   giovedi: 4,
-  'giovedì': 4,
+  giovedì: 4,
   venerdi: 5,
-  'venerdì': 5,
+  venerdì: 5,
   sabato: 6,
-  domenica: 7, // Domenica = 7 per restare nella stessa settimana
-};
+  domenica: 7 // Domenica = 7 per restare nella stessa settimana
+}
 
 function startOfWeek(date = new Date()) {
   // Usa il timezone locale per evitare shift di un giorno in ISO
-  const d = new Date(date);
-  const day = d.getDay(); // 0 = Sunday, 1 = Monday
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const d = new Date(date)
+  const day = d.getDay() // 0 = Sunday, 1 = Monday
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  d.setHours(0, 0, 0, 0)
+  return d
 }
 
 function formatLocalDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalDateString(dateStr) {
+  const parts = dateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    return new Date(dateStr)
+  }
+  return new Date(parts[0], parts[1] - 1, parts[2])
 }
 
 function dateForWeekday(weekday, reference = new Date()) {
-  const weekStart = startOfWeek(reference);
-  const targetIndex = WEEKDAY_INDEX[weekday.toLowerCase()] ?? 1;
-  const result = new Date(weekStart);
-  result.setDate(weekStart.getDate() + targetIndex - 1);
-  return formatLocalDate(result);
+  const weekStart = startOfWeek(reference)
+  const targetIndex = WEEKDAY_INDEX[weekday.toLowerCase()] ?? 1
+  const result = new Date(weekStart)
+  result.setDate(weekStart.getDate() + targetIndex - 1)
+  return formatLocalDate(result)
 }
 
 function buildTextSummary(rawText) {
-  if (!rawText) return '';
+  if (!rawText) return ''
   const firstSentence = rawText
     .split(/(?<=[\.\!\?])\s+|\n+/)
-    .map(s => s.trim())
-    .find(s => s.length > 0);
-  if (!firstSentence) return rawText.trim().slice(0, 120);
-  return firstSentence.length > 160 ? firstSentence.slice(0, 160) : firstSentence;
+    .map((s) => s.trim())
+    .find((s) => s.length > 0)
+  if (!firstSentence) return rawText.trim().slice(0, 120)
+  return firstSentence.length > 160 ? firstSentence.slice(0, 160) : firstSentence
 }
 
 function parseExplicitDate(str, reference = new Date()) {
   // Supporta formati tipo 15/01/2026 o 15-01-26
-  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
-  if (!m) return null;
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/)
+  if (!m) return null
 
-  const day = parseInt(m[1], 10);
-  const month = parseInt(m[2], 10) - 1; // JS months 0-based
-  const yearRaw = m[3];
-  let year = yearRaw ? parseInt(yearRaw, 10) : reference.getFullYear();
-  if (year < 100) year += 2000; // normalizza anni a due cifre
+  const day = parseInt(m[1], 10)
+  const month = parseInt(m[2], 10) - 1 // JS months 0-based
+  const yearRaw = m[3]
+  let year = yearRaw ? parseInt(yearRaw, 10) : reference.getFullYear()
+  if (year < 100) year += 2000 // normalizza anni a due cifre
 
-  const d = new Date(year, month, day);
-  if (Number.isNaN(d.getTime())) return null;
-  return formatLocalDate(d);
+  const d = new Date(year, month, day)
+  if (Number.isNaN(d.getTime())) return null
+  return formatLocalDate(d)
 }
 
 function parseRelativeDate(text, reference = new Date()) {
   // Supporta: "ieri", "oggi", "domani", "3 giorni fa", "2 giorni fa", etc.
-  const lower = text.trim().toLowerCase();
-  
+  const lower = text.trim().toLowerCase()
+
   // Exact matches
   if (lower === 'ieri' || lower === 'yesterday') {
-    const d = new Date(reference);
-    d.setDate(d.getDate() - 1);
-    return formatLocalDate(d);
+    const d = new Date(reference)
+    d.setDate(d.getDate() - 1)
+    return formatLocalDate(d)
   }
   if (lower === 'oggi' || lower === 'today') {
-    return formatLocalDate(reference);
+    return formatLocalDate(reference)
   }
   if (lower === 'domani' || lower === 'tomorrow') {
-    const d = new Date(reference);
-    d.setDate(d.getDate() + 1);
-    return formatLocalDate(d);
+    const d = new Date(reference)
+    d.setDate(d.getDate() + 1)
+    return formatLocalDate(d)
   }
-  
+
   // Pattern: "N giorni fa"
-  const daysAgoMatch = text.match(/^(\d+)\s*(?:giorno|giorni|day|days)\s+fa\s*$/i);
+  const daysAgoMatch = text.match(/^(\d+)\s*(?:giorno|giorni|day|days)\s+fa\s*$/i)
   if (daysAgoMatch) {
-    const days = parseInt(daysAgoMatch[1], 10);
-    const d = new Date(reference);
-    d.setDate(d.getDate() - days);
-    return formatLocalDate(d);
+    const days = parseInt(daysAgoMatch[1], 10)
+    const d = new Date(reference)
+    d.setDate(d.getDate() - days)
+    return formatLocalDate(d)
   }
-  
+
   // Pattern: "fra N giorni" / "in N giorni"
-  const daysFromNowMatch = text.match(/^(?:fra|in)\s+(\d+)\s*(?:giorno|giorni|day|days)\s*$/i);
+  const daysFromNowMatch = text.match(/^(?:fra|in)\s+(\d+)\s*(?:giorno|giorni|day|days)\s*$/i)
   if (daysFromNowMatch) {
-    const days = parseInt(daysFromNowMatch[1], 10);
-    const d = new Date(reference);
-    d.setDate(d.getDate() + days);
-    return formatLocalDate(d);
+    const days = parseInt(daysFromNowMatch[1], 10)
+    const d = new Date(reference)
+    d.setDate(d.getDate() + days)
+    return formatLocalDate(d)
   }
-  
-  return null;
+
+  return null
 }
 
 function findDayChunks(text, reference = new Date()) {
   // Match giorni senza richiedere : o parentesi (più tollerante)
-  const dayNames = ['lunedì', 'lunedi', 'martedì', 'martedi', 'mercoledì', 'mercoledi', 'giovedì', 'giovedi', 'venerdì', 'venerdi', 'sabato', 'domenica'];
-  const pattern = new RegExp(`(${dayNames.join('|')})`, 'gi');
-  
-  const matches = [];
-  let match;
+  const dayNames = [
+    'lunedì',
+    'lunedi',
+    'martedì',
+    'martedi',
+    'mercoledì',
+    'mercoledi',
+    'giovedì',
+    'giovedi',
+    'venerdì',
+    'venerdi',
+    'sabato',
+    'domenica'
+  ]
+  const pattern = new RegExp(`(${dayNames.join('|')})`, 'gi')
+
+  const matches = []
+  let match
   while ((match = pattern.exec(text)) !== null) {
     matches.push({
       index: match.index,
       keyword: match[1],
       charAfter: text[match.index + match[1].length]
-    });
+    })
   }
 
-  if (matches.length === 0) return [];
+  if (matches.length === 0) return []
 
-  const chunks = [];
+  const chunks = []
   for (let i = 0; i < matches.length; i++) {
-    const current = matches[i];
-    const next = matches[i + 1];
-    
+    const current = matches[i]
+    const next = matches[i + 1]
+
     // Trova l'inizio del testo dopo il giorno (spazi, : , - , parentesi)
-    let textStart = current.index + current.keyword.length;
+    let textStart = current.index + current.keyword.length
     while (textStart < text.length && /[\s:()\-]/.test(text[textStart])) {
-      textStart++;
+      textStart++
     }
-    
-    const start = textStart;
-    const end = next ? next.index : text.length;
-    const raw = text.slice(start, end).trim();
-    const cleaned = raw.replace(/^[:\-\s]+/, '').trim();
+
+    const start = textStart
+    const end = next ? next.index : text.length
+    const raw = text.slice(start, end).trim()
+    const cleaned = raw.replace(/^[:\-\s]+/, '').trim()
 
     // Se il testo dopo il giorno inizia con una data esplicita, estraila
-    const dateMatch = cleaned.match(/^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/);
-    const explicitDate = dateMatch ? parseExplicitDate(dateMatch[1], reference) : null;
-    const textWithoutDate = dateMatch ? cleaned.slice(dateMatch[1].length).trim() : cleaned;
-    
+    const dateMatch = cleaned.match(/^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/)
+    const explicitDate = dateMatch ? parseExplicitDate(dateMatch[1], reference) : null
+    const textWithoutDate = dateMatch ? cleaned.slice(dateMatch[1].length).trim() : cleaned
+
     // FILTER: Salta sessioni vuote (solo spazi, "niente", "riposo", punteggiatura)
-    const isEmpty = !textWithoutDate || 
-                    /^[\s.,!?-]*$/.test(textWithoutDate) || 
-                    /^\s*(niente|riposo|nulla|off|rest|completo|scarico)\s*[.,!?-]*$/i.test(textWithoutDate);
-    
+    const isEmpty =
+      !textWithoutDate ||
+      /^[\s.,!?-]*$/.test(textWithoutDate) ||
+      /^\s*(niente|riposo|nulla|off|rest|completo|scarico)\s*[.,!?-]*$/i.test(textWithoutDate)
+
     if (isEmpty) {
       // Skipping empty session
-      continue;
+      continue
     }
-    
+
     chunks.push({
       weekday: current.keyword.toLowerCase(),
       heading: current.keyword.trim(),
       text: textWithoutDate || cleaned || raw,
       explicitDate
-    });
+    })
   }
-  
-  return chunks;
+
+  return chunks
 }
 
 /**
  * Sanitizza la risposta JSON rimuovendo testo extra prima/dopo
  */
 function sanitizeJsonResponse(jsonStr) {
-  if (!jsonStr) return '{}';
-  
-  // Rimuovi caratteri di controllo invisibili
-  jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-  
+  if (!jsonStr) return '{}'
+
+  const original = jsonStr
+
+  // Rimuovi caratteri di controllo invisibili (mantieni \n \r \t)
+  jsonStr = jsonStr.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+
+  const trimmed = jsonStr.trim()
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed
+  }
+
   // Trova il primo { e l'ultimo } bilanciato
-  const firstBrace = jsonStr.indexOf('{');
-  if (firstBrace === -1) return '{}';
-  
-  let braceCount = 0;
-  let lastBrace = -1;
-  
+  const firstBrace = jsonStr.indexOf('{')
+  if (firstBrace === -1) return original.trim()
+
+  let braceCount = 0
+  let lastBrace = -1
+
   for (let i = firstBrace; i < jsonStr.length; i++) {
-    if (jsonStr[i] === '{') braceCount++;
+    if (jsonStr[i] === '{') braceCount++
     if (jsonStr[i] === '}') {
-      braceCount--;
+      braceCount--
       if (braceCount === 0) {
-        lastBrace = i;
-        break;
+        lastBrace = i
+        break
       }
     }
   }
-  
-  if (lastBrace === -1) return '{}';
-  
-  return jsonStr.slice(firstBrace, lastBrace + 1);
+
+  if (lastBrace === -1) return original.trim()
+
+  return jsonStr.slice(firstBrace, lastBrace + 1)
+}
+
+function fixCommonJsonIssues(jsonStr) {
+  if (!jsonStr) return jsonStr
+  // Remove trailing commas before } or ]
+  let fixed = jsonStr.replace(/,\s*([}\]])/g, '$1')
+  return fixed
 }
 
 /**
  * Parse sicuro per interi - gestisce range e valori non validi
  */
 function safeParseInt(value, defaultValue = null) {
-  if (value === null || value === undefined) return defaultValue;
-  
+  if (value === null || value === undefined) return defaultValue
+
   // Converti a stringa per gestire vari tipi di input
-  const str = String(value).trim();
-  
+  const str = String(value).trim()
+
   // Gestisci range (es. "20-25") - prendi il primo valore
   if (str.includes('-')) {
-    const parts = str.split('-');
-    const firstNum = parseInt(parts[0], 10);
+    const parts = str.split('-')
+    const firstNum = parseInt(parts[0], 10)
     if (!isNaN(firstNum) && firstNum > 0) {
-      console.warn(`[safeParseInt] Range detected "${str}", using first value: ${firstNum}`);
-      return firstNum;
+      console.warn(`[safeParseInt] Range detected "${str}", using first value: ${firstNum}`)
+      return firstNum
     }
   }
-  
-  const parsed = parseInt(str, 10);
-  return isNaN(parsed) ? defaultValue : parsed;
+
+  const parsed = parseInt(str, 10)
+  return isNaN(parsed) ? defaultValue : parsed
 }
 
 /**
  * Parse sicuro per float - gestisce range e valori non validi
  */
 function safeParseFloat(value, defaultValue = null) {
-  if (value === null || value === undefined) return defaultValue;
-  
+  if (value === null || value === undefined) return defaultValue
+
   // Converti a stringa per gestire vari tipi di input
-  const str = String(value).trim().replace(',', '.');
-  
+  const str = String(value).trim().replace(',', '.')
+
   // Gestisci range (es. "60-80") - prendi il primo valore
   if (str.includes('-')) {
-    const parts = str.split('-');
-    const firstNum = parseFloat(parts[0]);
+    const parts = str.split('-')
+    const firstNum = parseFloat(parts[0])
     if (!isNaN(firstNum) && firstNum > 0) {
-      console.warn(`[safeParseFloat] Range detected "${str}", using first value: ${firstNum}`);
-      return firstNum;
+      console.warn(`[safeParseFloat] Range detected "${str}", using first value: ${firstNum}`)
+      return firstNum
     }
   }
-  
-  const parsed = parseFloat(str);
-  return isNaN(parsed) ? defaultValue : parsed;
-}
 
-function buildProxyRequest(provider, userPrompt) {
-  const baseRequest = {
-    provider: 'gemini',
-    messages: [
-      { role: 'system', content: AI_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt }
-    ]
-  };
-
-  const isProd = import.meta.env.MODE === 'production';
-  return {
-    ...baseRequest,
-    model: 'gemini-2.5-flash',
-    // Usa JSON Mode nativo di Gemini per risposta strutturata
-    responseFormat: { type: 'json_object' },
-    ...(isProd ? {} : { apiKey: import.meta.env.VITE_GEMINI_API_KEY })
-  };
+  const parsed = parseFloat(str)
+  return isNaN(parsed) ? defaultValue : parsed
 }
 
 async function parseSingleDay({ text, date, titleHint, devApiKey = null, athleteContext = null }) {
+  let timeoutId = null
+  let controller = null
+
   try {
-    console.log('[parseSingleDay] Starting parse for date:', date, 'text length:', text.length);
-    const provider = 'gemini'; // Solo Gemini
-    const textSummary = buildTextSummary(text);
-    
+    console.log('[parseSingleDay] Starting parse for date:', date, 'text length:', text.length)
+    const textSummary = buildTextSummary(text)
+
     // Ottieni contesto atleta se non fornito (RAG pattern)
-    const context = athleteContext || await getAthleteContext();
+    const context = athleteContext || (await getAthleteContext())
 
     // Template con esempi concreti di esercizi
     const jsonTemplate = `{
@@ -450,9 +436,9 @@ async function parseSingleDay({ text, date, titleHint, devApiKey = null, athlete
       {"exercise_name":"Sprint 100m","category":"sprint","sets":4,"reps":1,"weight_kg":null,"distance_m":100,"time_s":null,"recovery_s":180,"notes":null,"details":{}}
     ]}
   ]
-}`;
+}`
 
-  const userPrompt = `${context}
+    const userPrompt = `${context}
 
 Extract training data and return ONLY valid JSON.
 
@@ -483,199 +469,227 @@ ${jsonTemplate}
 Return ONLY valid JSON. Do not include markdown or explanations.
 
 AMBIGUITIES: If you are uncertain about a value (e.g., "rec 3" could be 3 seconds or 3 minutes), add a question to the "questions_for_user" array.
-ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warning to the "warnings" array.`;
-  
-  // Usa il worker proxy con schema strutturato (eliminaREGEX parsing!)
-  const requestBody = buildSchemaRequest('gemini', [
-    { role: 'system', content: AI_SYSTEM_PROMPT },
-    { role: 'user', content: userPrompt }
-  ], TRAINING_SESSION_SCHEMA);
-  
-  // Dev mode: aggiungi API key custom se fornita
-  if (devApiKey && import.meta.env.MODE !== 'production') {
-    requestBody.apiKey = devApiKey;
-  }
-  
-  // Worker URL (env override also in dev)
-  let workerUrl = import.meta.env.VITE_WORKER_URL || 'http://localhost:5000';
-  if (!import.meta.env.VITE_WORKER_URL && import.meta.env.MODE === 'production') {
-    workerUrl = 'https://training-log-ai-proxy.giovanni-jecha.workers.dev';
-  }
-  
-  const headers = { 'Content-Type': 'application/json' };
-  
-  console.log('[Parser] About to fetch from:', workerUrl);
-  console.log('[Parser] Request body size:', JSON.stringify(requestBody).length, 'bytes');
+ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warning to the "warnings" array.`
 
-  // Implementa timeout di sicurezza (15 secondi max)
-  const controller = new AbortController();
-  let timeoutId; // Dichiara prima del try per accesso nel catch
-  
-  timeoutId = setTimeout(() => controller.abort(), 15000);
+    // Usa il worker proxy con schema strutturato (eliminaREGEX parsing!)
+    const requestBody = buildSchemaRequest('gemini', [
+      { role: 'system', content: AI_SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt }
+    ])
 
-  console.log('[Parser] Sending fetch request...');
-  const response = await fetch(workerUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
-    signal: controller.signal
-  });
-
-  console.log('[Parser] Fetch response received, status:', response.status);
-
-  if (!response.ok) {
-    clearTimeout(timeoutId); // Clear timeout immediately on error
-    const error = await response.json().catch(() => ({}));
-    console.error('[Parser] Worker error response:', error);
-    throw new Error(error.error?.message || `Worker error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  console.log('[Parser] Response data received, keys:', Object.keys(data));
-  clearTimeout(timeoutId); // Cancella il timeout se completato con successo
-  let rawContent = '';
-
-  // Worker ritorna il formato OpenAI-compatible
-  if (data.choices && data.choices[0]?.message?.content) {
-    rawContent = data.choices[0].message.content;
-    console.log('[Parser] Extracted content from choices[0].message.content, length:', rawContent.length);
-  } else if (data.error) {
-    console.error('[Parser] Data contains error:', data.error);
-    throw new Error(data.error.message || 'Worker error');
-  } else {
-    rawContent = JSON.stringify(data);
-    console.log('[Parser] No choices found, using raw data');
-  }
-
-  // Estratto JSON dal response
-  let jsonStr = rawContent.trim();
-  console.log('[Parser] JSON string after trim, length:', jsonStr.length, 'first 100 chars:', jsonStr.substring(0, 100));
-  
-  // Con JSON Mode di Gemini, dovrebbe essere già JSON puro
-  // Ma manteniamo fallback per markdown code blocks (compatibilità)
-  if (jsonStr.startsWith('```')) {
-    const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (match) {
-      jsonStr = match[1];
-      console.log('[Parser] Extracted JSON from code block');
-    }
-  }
-
-  // Sanitizza il JSON prima del parsing (rimuove testo extra prima/dopo)
-  jsonStr = sanitizeJsonResponse(jsonStr);
-  console.log('[Parser] After sanitization, length:', jsonStr.length);
-
-  // JSON Mode di Gemini ritorna JSON direttamente, parsing diretto
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonStr);
-    console.log('[Parser] JSON parsing successful, parsed keys:', Object.keys(parsed));
-    // JSON Mode parsing successful
-  } catch (e) {
-    console.warn(`[Parser] Direct JSON parsing failed:`, e.message);
-    console.warn(`[Parser] Attempting fallback extraction...`);
-    
-    // Fallback: estrai oggetto JSON se c'è testo extra
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error('[Parser] No JSON object found in response');
-      throw new Error('Risposta AI non contiene JSON');
+    // Dev mode: aggiungi API key custom se fornita
+    if (devApiKey && import.meta.env.MODE !== 'production') {
+      requestBody.apiKey = devApiKey
     }
 
-    jsonStr = jsonMatch[0];
-    console.log('[Parser] Extracted JSON object, length:', jsonStr.length);
-    
+    // Worker URL (env override also in dev)
+    let workerUrl = import.meta.env.VITE_WORKER_URL || 'http://localhost:5000'
+    if (!import.meta.env.VITE_WORKER_URL && import.meta.env.MODE === 'production') {
+      throw new Error('Missing VITE_WORKER_URL in production')
+    }
+
+    const headers = { 'Content-Type': 'application/json' }
+    console.log('[Parser] Env mode:', import.meta.env.MODE)
+    console.log('[Parser] Env VITE_WORKER_URL:', import.meta.env.VITE_WORKER_URL || '(unset)')
+
+    console.log('[Parser] About to fetch from:', workerUrl)
+    console.log('[Parser] Request body size:', JSON.stringify(requestBody).length, 'bytes')
+
+    // Implementa timeout di sicurezza (45 secondi max)
+    controller = new AbortController()
+    timeoutId = setTimeout(() => controller.abort(), 45000)
+
+    console.log('[Parser] Sending fetch request...')
+    const response = await fetch(workerUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    })
+
+    console.log('[Parser] Fetch response received, status:', response.status)
+
+    if (!response.ok) {
+      clearTimeout(timeoutId) // Clear timeout immediately on error
+      const error = await response.json().catch(() => ({}))
+      console.error('[Parser] Worker error response:', error)
+      if (error?.error?.message) {
+        console.error('[Parser] Worker error message:', error.error.message)
+      }
+      throw new Error(error.error?.message || `Worker error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    console.log('[Parser] Response data received, keys:', Object.keys(data))
+    clearTimeout(timeoutId) // Cancella il timeout se completato con successo
+    let rawContent = ''
+
+    // Worker ritorna il formato OpenAI-compatible
+    if (data.choices && data.choices[0]?.message?.content) {
+      rawContent = data.choices[0].message.content
+      console.log(
+        '[Parser] Extracted content from choices[0].message.content, length:',
+        rawContent.length
+      )
+    } else if (data.error) {
+      console.error('[Parser] Data contains error:', data.error)
+      throw new Error(data.error.message || 'Worker error')
+    } else {
+      rawContent = JSON.stringify(data)
+      console.log('[Parser] No choices found, using raw data')
+    }
+
+    // Estratto JSON dal response
+    let jsonStr = rawContent.trim()
+    console.log(
+      '[Parser] JSON string after trim, length:',
+      jsonStr.length,
+      'first 100 chars:',
+      jsonStr.substring(0, 100)
+    )
+
+    // Con JSON Mode di Gemini, dovrebbe essere già JSON puro
+    // Ma manteniamo fallback per markdown code blocks (compatibilità)
+    if (jsonStr.startsWith('```')) {
+      const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+      if (match) {
+        jsonStr = match[1]
+        console.log('[Parser] Extracted JSON from code block')
+      }
+    }
+
+    // Sanitizza il JSON prima del parsing (rimuove testo extra prima/dopo)
+    jsonStr = sanitizeJsonResponse(jsonStr)
+    jsonStr = fixCommonJsonIssues(jsonStr)
+    console.log('[Parser] After sanitization, length:', jsonStr.length)
+
+    // JSON Mode di Gemini ritorna JSON direttamente, parsing diretto
+    let parsed
     try {
-      parsed = JSON.parse(jsonStr);
-      console.log('[Parser] Fallback JSON parsing successful');
-    } catch (e2) {
-      console.warn(`[Parser] Second parse attempt failed, using minimal structure...`);
-      // Fallback: struttura minima
-      parsed = {
-        session: { date, title: 'Session', type: 'altro', rpe: null, feeling: null, notes: null },
-        groups: [{
-          name: 'Sessione',
-          order_index: 0,
-          notes: null,
-          sets: [{
-            exercise_name: 'Sessione registrata',
-            category: 'other',
-            sets: 1,
-            reps: 1,
-            weight_kg: null,
-            distance_m: null,
-            time_s: null,
-            recovery_s: null,
-            notes: 'Contenuto estratto',
-            details: {}
-          }]
-        }]
-      };
+      parsed = JSON.parse(jsonStr)
+      console.log('[Parser] JSON parsing successful, parsed keys:', Object.keys(parsed))
+      // JSON Mode parsing successful
+    } catch (e) {
+      console.warn(`[Parser] Direct JSON parsing failed:`, e.message)
+      console.warn(`[Parser] Attempting fallback extraction...`)
+
+      // Fallback: estrai oggetto JSON se c'è testo extra
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        console.error('[Parser] No JSON object found in response')
+        throw new Error('Risposta AI non contiene JSON')
+      }
+
+      jsonStr = fixCommonJsonIssues(jsonMatch[0])
+      console.log('[Parser] Extracted JSON object, length:', jsonStr.length)
+
+      try {
+        parsed = JSON.parse(jsonStr)
+        console.log('[Parser] Fallback JSON parsing successful')
+      } catch {
+        console.warn('[Parser] Second parse attempt failed, using minimal structure...')
+        // Fallback: struttura minima
+        parsed = {
+          session: { date, title: 'Session', type: 'altro', rpe: null, feeling: null, notes: null },
+          groups: [
+            {
+              name: 'Sessione',
+              order_index: 0,
+              notes: null,
+              sets: [
+                {
+                  exercise_name: 'Sessione registrata',
+                  category: 'other',
+                  sets: 1,
+                  reps: 1,
+                  weight_kg: null,
+                  distance_m: null,
+                  time_s: null,
+                  recovery_s: null,
+                  notes: 'Contenuto estratto',
+                  details: {}
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
-  }
 
-  // Garantisci struttura
-  if (!parsed.session) parsed.session = {};
-  if (!parsed.groups) parsed.groups = [];
-  if (!parsed.questions_for_user) parsed.questions_for_user = [];
-  if (!parsed.warnings) parsed.warnings = [];
+    // Garantisci struttura
+    if (!parsed.session) parsed.session = {}
+    if (!parsed.groups) parsed.groups = []
+    if (!parsed.questions_for_user) parsed.questions_for_user = []
+    if (!parsed.warnings) parsed.warnings = []
 
-  parsed.session.date = date;
-  if (!parsed.session.title || !parsed.session.title.trim()) {
-    parsed.session.title = textSummary || titleHint || 'Sessione';
-  }
-  if (!parsed.session.notes || !parsed.session.notes.trim()) {
-    parsed.session.notes = textSummary || parsed.session.notes || null;
-  }
+    parsed.session.date = date
+    if (!parsed.session.title || !parsed.session.title.trim()) {
+      parsed.session.title = textSummary || titleHint || 'Sessione'
+    }
+    if (!parsed.session.notes || !parsed.session.notes.trim()) {
+      parsed.session.notes = textSummary || parsed.session.notes || null
+    }
 
-  console.log('[Parser] Session structured:', {
-    date: parsed.session.date,
-    title: parsed.session.title,
-    groups: parsed.groups.length,
-    questions: parsed.questions_for_user?.length || 0,
-    warnings: parsed.warnings?.length || 0
-  });
+    console.log('[Parser] Session structured:', {
+      date: parsed.session.date,
+      title: parsed.session.title,
+      groups: parsed.groups.length,
+      questions: parsed.questions_for_user?.length || 0,
+      warnings: parsed.warnings?.length || 0
+    })
 
-  // Valida e ripulisci groups
-  parsed.groups = parsed.groups.map(group => ({
-    ...group,
-    sets: (group.sets || [])
-      .filter(set => set && set.exercise_name && set.exercise_name.trim())
-      .map(set => ({
-        exercise_name: (set.exercise_name || 'Unknown').trim(),
-        category: set.category || 'other',
-        sets: safeParseInt(set.sets, 1),
-        reps: safeParseInt(set.reps, 1),
-        weight_kg: safeParseFloat(set.weight_kg),
-        distance_m: safeParseFloat(set.distance_m),
-        time_s: safeParseFloat(set.time_s),
-        recovery_s: safeParseInt(set.recovery_s),
-        notes: set.notes || null,
-        details: set.details || {}
+    // Valida e ripulisci groups
+    parsed.groups = parsed.groups
+      .map((group) => ({
+        ...group,
+        sets: (group.sets || [])
+          .filter((set) => set && set.exercise_name && set.exercise_name.trim())
+          .map((set) => ({
+            exercise_name: (set.exercise_name || 'Unknown').trim(),
+            category: set.category || 'other',
+            sets: safeParseInt(set.sets, 1),
+            reps: safeParseInt(set.reps, 1),
+            weight_kg: safeParseFloat(set.weight_kg),
+            distance_m: safeParseFloat(set.distance_m),
+            time_s: safeParseFloat(set.time_s),
+            recovery_s: safeParseInt(set.recovery_s),
+            notes: set.notes || null,
+            details: set.details || {}
+          }))
       }))
-  }))
-  .filter(group => group.sets && group.sets.length > 0);
+      .filter((group) => group.sets && group.sets.length > 0)
 
-  console.log('[Parser] After validation, groups:', parsed.groups.length);
+    console.log('[Parser] After validation, groups:', parsed.groups.length)
 
-  // Valida type
-  const validTypes = ['pista', 'palestra', 'strada', 'gara', 'test', 'scarico', 'recupero', 'altro'];
-  if (parsed.session.type && !validTypes.includes(parsed.session.type.toLowerCase())) {
-    parsed.session.type = 'altro';
-  }
+    // Valida type
+    const validTypes = [
+      'pista',
+      'palestra',
+      'strada',
+      'gara',
+      'test',
+      'scarico',
+      'recupero',
+      'altro'
+    ]
+    if (parsed.session.type && !validTypes.includes(parsed.session.type.toLowerCase())) {
+      parsed.session.type = 'altro'
+    }
 
-    return parsed;
+    return parsed
   } catch (e) {
-    clearTimeout(timeoutId); // Assicura pulizia del timeout
-    
+    if (timeoutId) clearTimeout(timeoutId) // Assicura pulizia del timeout
+
     // Gestisci errore di timeout specificamente
     if (e.name === 'AbortError') {
-      console.error('[Parser] ❌ Timeout error - request took too long (>15s)');
-      throw new Error('La richiesta ha impiegato troppo tempo. Controlla la tua connessione e riprova.');
+      console.error('[Parser] ❌ Timeout error - request took too long (>45s)')
+      throw new Error(
+        'La richiesta ha impiegato troppo tempo. Controlla la tua connessione e riprova.'
+      )
     }
-    console.error(`[Parser] ❌ Final error for date ${date}:`, e.message);
-    console.error('[Parser] Error stack:', e.stack);
-    throw new Error(`Parsing ${date}: ${e.message}`);
+    console.error(`[Parser] ❌ Final error for date ${date}:`, e.message)
+    console.error('[Parser] Error stack:', e.stack)
+    throw new Error(`Parsing ${date}: ${e.message}`)
   }
 }
 
@@ -686,267 +700,248 @@ ANOMALIES: If a value seems impossible or unusual (e.g., 100m in 9s), add a warn
  * - Se non trova neanche una data, usa la data di riferimento (oggi).
  */
 function inferRpeFromText(text) {
-  if (!text) return null;
-  const lower = text.toLowerCase();
+  if (!text) return null
+  const lower = text.toLowerCase()
 
-  const numeric = lower.match(/(\d{1,2})\s*(?:\/10|su\s*10)/);
+  const numeric = lower.match(/(\d{1,2})\s*(?:\/10|su\s*10)/)
   if (numeric) {
-    const val = parseInt(numeric[1], 10);
-    if (val >= 1 && val <= 10) return val;
+    const val = parseInt(numeric[1], 10)
+    if (val >= 1 && val <= 10) return val
   }
 
-  if (lower.includes('massimo')) return 9;
-  if (lower.includes('alta') || lower.includes('intenso')) return 8;
-  if (lower.includes('media')) return 6;
-  if (lower.includes('bassa') || lower.includes('easy')) return 4;
-  if (lower.includes('scarico') || lower.includes('recupero')) return 3;
+  if (lower.includes('massimo')) return 9
+  if (lower.includes('alta') || lower.includes('intenso')) return 8
+  if (lower.includes('media')) return 6
+  if (lower.includes('bassa') || lower.includes('easy')) return 4
+  if (lower.includes('scarico') || lower.includes('recupero')) return 3
 
-  return null;
+  return null
 }
 
 export async function parseTrainingWithAI(trainingText, referenceDate = new Date()) {
-  let trimmed = trainingText?.trim();
-  if (!trimmed) throw new Error('Testo allenamento vuoto');
-  
+  let trimmed = trainingText?.trim()
+  if (!trimmed) throw new Error('Testo allenamento vuoto')
+
   // PREPROCESSING: Controlla relative dates nel testo
   // Pattern: "Ieri ho fatto..." oppure "Oggi..." oppure "Domani..."
-  const relativeDateMatch = trimmed.match(/^(ieri|oggi|domani|[\d]+\s+(?:giorno|giorni|day|days)\s+fa|fra\s+[\d]+\s+(?:giorno|giorni|day|days)|in\s+[\d]+\s+(?:giorno|giorni|day|days))\b/i);
+  const relativeDateMatch = trimmed.match(
+    /^(ieri|oggi|domani|[\d]+\s+(?:giorno|giorni|day|days)\s+fa|fra\s+[\d]+\s+(?:giorno|giorni|day|days)|in\s+[\d]+\s+(?:giorno|giorni|day|days))\b/i
+  )
   if (relativeDateMatch) {
-    const relativeDate = parseRelativeDate(relativeDateMatch[1], referenceDate);
+    const relativeDate = parseRelativeDate(relativeDateMatch[1], referenceDate)
     if (relativeDate) {
       // Sostituisci "Ieri ho fatto..." con il testo senza il prefisso relativo
-      trimmed = trimmed.slice(relativeDateMatch[0].length).trim();
+      trimmed = trimmed.slice(relativeDateMatch[0].length).trim()
       // Usa la data relativa calcolata come data di riferimento
       const parsedSingle = await parseSingleDay({
         text: trimmed,
         date: relativeDate,
         titleHint: null
-      });
+      })
       if (!parsedSingle.session.rpe) {
-        const inferred = inferRpeFromText(trimmed);
-        if (inferred) parsedSingle.session.rpe = inferred;
+        const inferred = inferRpeFromText(trimmed)
+        if (inferred) parsedSingle.session.rpe = inferred
       }
       const personalBests = mergePersonalBests(
         extractPersonalBests(trainingText),
         derivePBsFromSessions([parsedSingle])
-      );
-      const injuries = extractInjuries(trainingText);
-      return { sessions: [parsedSingle], personalBests, injuries };
+      )
+      const injuries = extractInjuries(trainingText)
+      return { sessions: [parsedSingle], personalBests, injuries }
     }
   }
-  
+
   // Cerca pattern "inizio settimana DD/MM/YYYY" o "settimana del DD/MM/YYYY"
-  let weekReference = referenceDate;
+  let weekReference = referenceDate
   const weekPatterns = [
     /(?:inizio\s+settimana|settimana\s+del|settimana)\s*:?\s*(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i,
     /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s*[-:]\s*settimana/i
-  ];
-  
+  ]
+
   for (const pattern of weekPatterns) {
-    const match = trimmed.match(pattern);
+    const match = trimmed.match(pattern)
     if (match) {
-      const parsed = parseExplicitDate(match[1], referenceDate);
+      const parsed = parseExplicitDate(match[1], referenceDate)
       if (parsed) {
-        weekReference = new Date(parsed);
+        weekReference = parseLocalDateString(parsed)
         // Rimuovi questa frase introduttiva dal testo
-        trimmed = trimmed.replace(match[0], '').trim();
-        break;
+        trimmed = trimmed.replace(match[0], '').trim()
+        break
       }
     }
   }
-  
-  const chunks = findDayChunks(trimmed, weekReference);
+
+  const chunks = findDayChunks(trimmed, weekReference)
 
   // Caso multi-giorno
   if (chunks.length > 0) {
-    const sessions = [];
+    const sessions = []
     for (const chunk of chunks) {
-      const targetDate = chunk.explicitDate || dateForWeekday(chunk.weekday, weekReference);
+      const targetDate = chunk.explicitDate || dateForWeekday(chunk.weekday, weekReference)
       const parsed = await parseSingleDay({
         text: chunk.text,
         date: targetDate,
         titleHint: chunk.heading
-      });
+      })
       // Se manca rpe, prova a inferirlo dal testo del chunk
       if (!parsed.session.rpe) {
-        const inferred = inferRpeFromText(chunk.text);
-        if (inferred) parsed.session.rpe = inferred;
+        const inferred = inferRpeFromText(chunk.text)
+        if (inferred) parsed.session.rpe = inferred
       }
-      sessions.push(parsed);
+      sessions.push(parsed)
     }
 
     const personalBests = mergePersonalBests(
       extractPersonalBests(trimmed),
       derivePBsFromSessions(sessions)
-    );
-    const injuries = extractInjuries(trimmed);
-    const questions = sessions.flatMap(s => s.questions_for_user || []);
-    const warnings = sessions.flatMap(s => s.warnings || []);
-    return { sessions, personalBests, injuries, questions_for_user: questions, warnings };
+    )
+    const injuries = extractInjuries(trimmed)
+    const questions = sessions.flatMap((s) => s.questions_for_user || [])
+    const warnings = sessions.flatMap((s) => s.warnings || [])
+    return { sessions, personalBests, injuries, questions_for_user: questions, warnings }
   }
 
   // Caso singolo giorno: cerca data esplicita nel testo
-  let singleDate = formatLocalDate(new Date(weekReference));
-  let singleText = trimmed;
-  
-  // Estrai data esplicita se presente
-  const dateMatch = trimmed.match(/^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/);
+  let singleDate = formatLocalDate(new Date(weekReference))
+  let singleText = trimmed
+
+  // Estrai data esplicita se presente (anche non all'inizio)
+  const dateMatch = trimmed.match(/(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/)
   if (dateMatch) {
-    const extracted = parseExplicitDate(dateMatch[1], weekReference);
+    const extracted = parseExplicitDate(dateMatch[1], weekReference)
     if (extracted) {
-      singleDate = extracted;
-      singleText = trimmed.slice(dateMatch[1].length).trim();
+      singleDate = extracted
+      singleText = trimmed.replace(dateMatch[1], '').trim()
     }
   }
-  
-  const parsed = await parseSingleDay({ text: singleText, date: singleDate, titleHint: null });
+
+  const parsed = await parseSingleDay({ text: singleText, date: singleDate, titleHint: null })
   if (!parsed.session.rpe) {
-    const inferred = inferRpeFromText(singleText);
-    if (inferred) parsed.session.rpe = inferred;
+    const inferred = inferRpeFromText(singleText)
+    if (inferred) parsed.session.rpe = inferred
   }
 
   const personalBests = mergePersonalBests(
     extractPersonalBests(trimmed),
     derivePBsFromSessions([parsed])
-  );
-  const injuries = extractInjuries(trimmed);
-  const questions = parsed.questions_for_user || [];
-  const warnings = parsed.warnings || [];
-  return { sessions: [parsed], personalBests, injuries, questions_for_user: questions, warnings };
+  )
+  const injuries = extractInjuries(trimmed)
+  const questions = parsed.questions_for_user || []
+  const warnings = parsed.warnings || []
+  return { sessions: [parsed], personalBests, injuries, questions_for_user: questions, warnings }
 }
 
 function validateSingleSession(data) {
-  const errors = [];
+  const errors = []
 
   if (!data.session) {
-    errors.push('Mancano i dati della sessione');
+    errors.push('Mancano i dati della sessione')
   } else {
-    if (!data.session.date) errors.push('Data sessione mancante');
-    if (!data.session.type) errors.push('Tipo sessione mancante');
+    if (!data.session.date) errors.push('Data sessione mancante')
+    if (!data.session.type) errors.push('Tipo sessione mancante')
 
-    const validTypes = ['pista', 'palestra', 'strada', 'gara', 'test', 'scarico', 'recupero', 'altro'];
-    let sessionType = data.session.type;
+    const validTypes = [
+      'pista',
+      'palestra',
+      'strada',
+      'gara',
+      'test',
+      'scarico',
+      'recupero',
+      'altro'
+    ]
+    let sessionType = data.session.type
     if (sessionType && typeof sessionType === 'string') {
-      sessionType = sessionType.toLowerCase().trim();
+      sessionType = sessionType.toLowerCase().trim()
 
       if (sessionType.includes(',')) {
-        sessionType = sessionType.split(',')[0].trim();
+        sessionType = sessionType.split(',')[0].trim()
       }
 
       if (sessionType.match(/[\s\-_,]+/)) {
-        const parts = sessionType.split(/[\s\-_,]+/).filter(Boolean);
-        sessionType = parts.find(p => validTypes.includes(p)) || parts[0];
+        const parts = sessionType.split(/[\s\-_,]+/).filter(Boolean)
+        sessionType = parts.find((p) => validTypes.includes(p)) || parts[0]
       }
 
       if (!validTypes.includes(sessionType)) {
         for (const type of validTypes) {
           if (sessionType.includes(type)) {
-            sessionType = type;
-            break;
+            sessionType = type
+            break
           }
         }
       }
 
-      data.session.type = sessionType;
+      data.session.type = sessionType
     }
 
     if (sessionType && !validTypes.includes(sessionType)) {
-      errors.push(`Tipo sessione non valido: ${sessionType}`);
+      errors.push(`Tipo sessione non valido: ${sessionType}`)
     }
 
     if (data.session.rpe !== null && data.session.rpe !== undefined) {
-      const rpe = parseInt(data.session.rpe, 10);
+      const rpe = parseInt(data.session.rpe, 10)
       if (Number.isNaN(rpe) || rpe < 0 || rpe > 10) {
-        errors.push('RPE deve essere tra 0 e 10');
+        errors.push('RPE deve essere tra 0 e 10')
       }
     }
   }
 
   if (!data.groups || !Array.isArray(data.groups)) {
-    console.warn('[validateSingleSession] No groups found, creating placeholder');
-    data.groups = [];
+    data.groups = []
   }
 
-  if (data.groups.length === 0) {
-    // Crea un gruppo placeholder se non ci sono gruppi
-    console.warn('[validateSingleSession] Adding placeholder group for session');
-    data.groups = [{
-      name: 'Sessione',
-      order_index: 0,
-      notes: 'Sessione auto-creata',
-      sets: [{
-        exercise_name: 'Sessione registrata',
-        category: 'other',
-        sets: 1,
-        reps: 1,
-        weight_kg: null,
-        distance_m: null,
-        time_s: null,
-        recovery_s: null,
-        notes: 'Contenuto estratto dal testo',
-        details: null
-      }]
-    }];
-  } else {
-    const validCategories = ['sprint', 'jump', 'lift', 'endurance', 'mobility', 'drill', 'other'];
-    data.groups.forEach((group, idx) => {
-      if (!group.sets || !Array.isArray(group.sets) || group.sets.length === 0) {
-        console.warn(`[validateSingleSession] Group ${idx + 1} is empty, adding placeholder`);
-        group.sets = [{
-          exercise_name: group.name || 'Esercizio',
-          category: 'other',
-          sets: 1,
-          reps: 1,
-          weight_kg: null,
-          distance_m: null,
-          time_s: null,
-          recovery_s: null,
-          notes: null,
-          details: null
-        }];
-      }
-
-      group.sets?.forEach((set, setIdx) => {
-        if (!set.exercise_name) {
-          console.warn(`[validateSingleSession] Set ${setIdx + 1} in group ${idx + 1} has no name, using group name`);
-          set.exercise_name = group.name || 'Esercizio senza nome';
-        }
-        if (set.category && !validCategories.includes(set.category)) {
-          console.warn(`[validateSingleSession] Invalid category "${set.category}", using "other"`);
-          set.category = 'other';
-        }
-      });
-    });
+  if (data.groups.length > 0) {
+    const validCategories = ['sprint', 'jump', 'lift', 'endurance', 'mobility', 'drill', 'other']
+    data.groups = data.groups
+      .filter((group) => Array.isArray(group.sets) && group.sets.length > 0)
+      .map((group) => {
+        group.sets = group.sets.map((set, setIdx) => {
+          if (!set.exercise_name) {
+            console.warn(`[validateSingleSession] Set ${setIdx + 1} has no name, using group name`)
+            set.exercise_name = group.name || 'Esercizio senza nome'
+          }
+          if (set.category && !validCategories.includes(set.category)) {
+            console.warn(
+              `[validateSingleSession] Invalid category "${set.category}", using "other"`
+            )
+            set.category = 'other'
+          }
+          return set
+        })
+        return group
+      })
   }
 
-  return errors;
+  return errors
 }
 
 /**
  * Valida dati parsati. Supporta sia {session,...} (legacy) sia {sessions:[...]} (multi).
  */
 export function validateParsedData(data) {
-  if (!data) return { valid: false, errors: ['Nessun dato parsato'] };
+  if (!data) return { valid: false, errors: ['Nessun dato parsato'] }
 
-  const sessions = Array.isArray(data.sessions) && data.sessions.length > 0
-    ? data.sessions
-    : data.session
-      ? [data]
-      : [];
+  const sessions =
+    Array.isArray(data.sessions) && data.sessions.length > 0
+      ? data.sessions
+      : data.session
+        ? [data]
+        : []
 
   if (sessions.length === 0) {
-    return { valid: false, errors: ['Nessuna sessione trovata'] };
+    return { valid: false, errors: ['Nessuna sessione trovata'] }
   }
 
   const errors = sessions.flatMap((s, idx) => {
-    const errs = validateSingleSession(s);
-    return errs.map(e => `Sessione ${idx + 1}: ${e}`);
-  });
+    const errs = validateSingleSession(s)
+    return errs.map((e) => `Sessione ${idx + 1}: ${e}`)
+  })
 
   return {
     valid: errors.length === 0,
     errors
-  };
+  }
 }
 
 // =====================
@@ -954,44 +949,77 @@ export function validateParsedData(data) {
 // =====================
 
 export function extractPersonalBests(text) {
-  const pbs = [];
+  const pbs = []
 
   // PB esplicito: "100m 10.5sec PB" (classifica come gara solo se il contesto contiene gara/competizione)
-  const racePattern = /(\d+)\s*m(?:etri?)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?\s+(?:PB|personal\s+best|nuovo\s+record|miglior\s+tempo)/gi;
-  let match;
+  const racePattern =
+    /(\d+)\s*m(?:etri?)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?\s+(?:PB|personal\s+best|nuovo\s+record|miglior\s+tempo)/gi
+  let match
   while ((match = racePattern.exec(text)) !== null) {
-    const distance = parseInt(match[1]);
-    const time = parseFloat(match[2].replace(',', '.'));
-    const isCompetition = /\bgara\b|\bcompetizione\b/i.test(text);
+    const distance = parseInt(match[1])
+    const time = parseFloat(match[2].replace(',', '.'))
+    const isCompetition = /\bgara\b|\bcompetizione\b/i.test(text)
     if (isCompetition) {
-      pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true });
+      pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true })
     } else {
-      pbs.push({ type: 'training', exercise_name: `Sprint ${distance}m`, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true });
+      pbs.push({
+        type: 'training',
+        exercise_name: `Sprint ${distance}m`,
+        exercise_type: 'sprint',
+        performance_value: time,
+        performance_unit: 'seconds',
+        is_personal_best: true
+      })
     }
   }
 
   // PB implicito in contesto gara: "gara 60m 7.18" oppure "competizione 100 10.40"
   if (text.match(/\bgara\b|\bcompetizione\b|\bgare\b/i)) {
-    const implicitRacePattern = /(?:gara|competizione)\s*:?\s*(\d+)\s*m?(?:etri)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?(?!\s+(?:x|serie|set|\d+x))/gi;
+    const implicitRacePattern =
+      /(?:gara|competizione)\s*:?\s*(\d+)\s*m?(?:etri)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?(?!\s+(?:x|serie|set|\d+x))/gi
     while ((match = implicitRacePattern.exec(text)) !== null) {
-      const distance = parseInt(match[1]);
-      const time = parseFloat(match[2].replace(',', '.'));
-      const isDuplicate = pbs.some(pb => pb.type === 'race' && pb.distance_m === distance && Math.abs(pb.time_s - time) < 0.1);
+      const distance = parseInt(match[1])
+      const time = parseFloat(match[2].replace(',', '.'))
+      const isDuplicate = pbs.some(
+        (pb) => pb.type === 'race' && pb.distance_m === distance && Math.abs(pb.time_s - time) < 0.1
+      )
       if (!isDuplicate) {
-        pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true, implicit: true });
+        pbs.push({
+          type: 'race',
+          distance_m: distance,
+          time_s: time,
+          is_personal_best: true,
+          implicit: true
+        })
       }
     }
   }
 
   // PB implicito in contesto pista (allenamento): "pista 150m 19.8"
   if (text.match(/\bpista\b/i)) {
-    const implicitTrainingPattern = /pista\s*:?\s*(\d+)\s*m?(?:etri)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?(?!\s+(?:x|serie|set|\d+x))/gi;
+    const implicitTrainingPattern =
+      /pista\s*:?\s*(\d+)\s*m?(?:etri)?\s+(?:in\s+)?(\d+[.,]\d+|\d+)\s*(?:sec|s)?(?!\s+(?:x|serie|set|\d+x))/gi
     while ((match = implicitTrainingPattern.exec(text)) !== null) {
-      const distance = parseInt(match[1]);
-      const time = parseFloat(match[2].replace(',', '.'));
-      const isDuplicate = pbs.some(pb => pb.type === 'training' && pb.exercise_type === 'sprint' && pb.performance_unit === 'seconds' && pb.exercise_name === `Sprint ${distance}m` && Math.abs(pb.performance_value - time) < 0.1);
+      const distance = parseInt(match[1])
+      const time = parseFloat(match[2].replace(',', '.'))
+      const isDuplicate = pbs.some(
+        (pb) =>
+          pb.type === 'training' &&
+          pb.exercise_type === 'sprint' &&
+          pb.performance_unit === 'seconds' &&
+          pb.exercise_name === `Sprint ${distance}m` &&
+          Math.abs(pb.performance_value - time) < 0.1
+      )
       if (!isDuplicate) {
-        pbs.push({ type: 'training', exercise_name: `Sprint ${distance}m`, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true, implicit: true });
+        pbs.push({
+          type: 'training',
+          exercise_name: `Sprint ${distance}m`,
+          exercise_type: 'sprint',
+          performance_value: time,
+          performance_unit: 'seconds',
+          is_personal_best: true,
+          implicit: true
+        })
       }
     }
   }
@@ -1000,75 +1028,150 @@ export function extractPersonalBests(text) {
   if (text.match(/\btest\b|\bsforzo\b|\bmassimo\b|\btempo\b|\bcronometro\b/i)) {
     // Consente poche parole tra distanza e tempo (es. "300m ripetuta singola in 36.5") ma blocca pattern di ripetizioni (x, serie, volte)
     // Richiede o "in <tempo>" oppure un'unità (sec/s/"), per non scambiare RPE o conteggi per tempi
-    const genericRacePattern = /(?:^|\b)(?!\d+\s*x)(\d+)\s*m(?:etri)?\b(?:\s+(?!\d+\s*(?:x|volte|rip|rep|serie|set))(?!per\s+\d)(?!x\s+\d)(?:[a-zà-ù']+)){0,4}\s*(?:in\s+(\d+[.,]\d+|\d+)|(\d+[.,]\d+|\d+)(?:['"”″]|\s*(?:sec|s)\b))(?!\s+(?:x|serie|set|\d+x|volte|volta|ripetute|rip|rep))/gi;
+    const genericRacePattern =
+      /(?:^|\b)(?!\d+\s*x)(\d+)\s*m(?:etri)?\b(?:\s+(?!\d+\s*(?:x|volte|rip|rep|serie|set))(?!per\s+\d)(?!x\s+\d)(?:[a-zà-ù']+)){0,4}\s*(?:in\s+(\d+[.,]\d+|\d+)|(\d+[.,]\d+|\d+)(?:['"”″]|\s*(?:sec|s)\b))(?!\s+(?:x|serie|set|\d+x|volte|volta|ripetute|rip|rep))/gi
     while ((match = genericRacePattern.exec(text)) !== null) {
-      const rawSegment = match[0];
-      if (/rec(?:upero)?/i.test(rawSegment)) continue; // evita di leggere i recuperi come tempi PB
+      const rawSegment = match[0]
+      if (/rec(?:upero)?/i.test(rawSegment)) continue // evita di leggere i recuperi come tempi PB
 
-      const distance = parseInt(match[1]);
-      const timeStr = match[2] || match[3];
-      const time = parseFloat(timeStr.replace(',', '.'));
+      const distance = parseInt(match[1])
+      const timeStr = match[2] || match[3]
+      const time = parseFloat(timeStr.replace(',', '.'))
       // Evita duplicati e tempi irreali
-      if (time <= 0 || time > 600) continue; // taglia tempi fuori scala
-      const minPlausible = distance / 12; // es: 100m -> ~8.3s minimo plausibile
-      if (time < minPlausible) continue; // scarta conteggi o RPE (es. "60m ... intensità 8")
-      const isDuplicate = pbs.some(pb => pb.type === 'training' && pb.exercise_name === `Sprint ${distance}m` && Math.abs(pb.performance_value - time) < 0.1);
+      if (time <= 0 || time > 600) continue // taglia tempi fuori scala
+      const minPlausible = distance / 12 // es: 100m -> ~8.3s minimo plausibile
+      if (time < minPlausible) continue // scarta conteggi o RPE (es. "60m ... intensità 8")
+      const isDuplicate = pbs.some(
+        (pb) =>
+          pb.type === 'training' &&
+          pb.exercise_name === `Sprint ${distance}m` &&
+          Math.abs(pb.performance_value - time) < 0.1
+      )
       if (!isDuplicate) {
-        pbs.push({ type: 'training', exercise_name: `Sprint ${distance}m`, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true, implicit: true, generic: true });
+        pbs.push({
+          type: 'training',
+          exercise_name: `Sprint ${distance}m`,
+          exercise_type: 'sprint',
+          performance_value: time,
+          performance_unit: 'seconds',
+          is_personal_best: true,
+          implicit: true,
+          generic: true
+        })
       }
     }
   }
 
   // PB forza esplicito: "Squat 100kg PB" o "provato il massimale, salito a 160kg (PB assoluto)"
   // Pattern 1: Peso seguito da indicatore PB
-  const strengthPattern = /(squat|bench|deadlift|stacco|clean|jerk|press|military\s+press|panca|trazioni?|girata)\s+(?:al\s+petto\s+)?(\d+[.,]\d+|\d+)\s*kg\s*(?:\()?(?:PB|personal\s+best|massimale|nuovo\s+massimale|PB\s+assoluto|record)/gi;
+  const strengthPattern =
+    /(squat|bench|deadlift|stacco|clean|jerk|press|military\s+press|panca|trazioni?|girata)\s+(?:al\s+petto\s+)?(\d+[.,]\d+|\d+)\s*kg\s*(?:\()?(?:PB|personal\s+best|massimale|nuovo\s+massimale|PB\s+assoluto|record)/gi
   while ((match = strengthPattern.exec(text)) !== null) {
-    const exerciseName = match[1];
+    const exerciseName = match[1]
     const categoryMap = {
-      'squat': 'squat', 'bench': 'bench', 'panca': 'bench', 'deadlift': 'deadlift', 'stacco': 'deadlift',
-      'clean': 'clean', 'jerk': 'jerk', 'press': 'press', 'military press': 'press', 'military': 'press',
-      'trazioni': 'pull', 'trazione': 'pull', 'girata': 'clean'
-    };
-    const category = categoryMap[exerciseName.toLowerCase()] || 'other';
-    pbs.push({ type: 'strength', exercise_name: exerciseName, category, weight_kg: parseFloat(match[2].replace(',', '.')), reps: 1, is_personal_best: true });
+      squat: 'squat',
+      bench: 'bench',
+      panca: 'bench',
+      deadlift: 'deadlift',
+      stacco: 'deadlift',
+      clean: 'clean',
+      jerk: 'jerk',
+      press: 'press',
+      'military press': 'press',
+      military: 'press',
+      trazioni: 'pull',
+      trazione: 'pull',
+      girata: 'clean'
+    }
+    const category = categoryMap[exerciseName.toLowerCase()] || 'other'
+    pbs.push({
+      type: 'strength',
+      exercise_name: exerciseName,
+      category,
+      weight_kg: parseFloat(match[2].replace(',', '.')),
+      reps: 1,
+      is_personal_best: true
+    })
   }
 
   // Pattern 2: "provato/testato il massimale ... a XXkg" o "salito a XXkg"
-  const maxAttemptPattern = /(?:provato|testato|fatto|tentato)\s+(?:il\s+)?massimale[^\.!?]{0,40}?\b(squat|bench|deadlift|stacco|clean|jerk|press|panca|girata)\s*[^\.!?]{0,30}?(?:a|facile\s+a|salito\s+a|arrivato\s+a)\s+(\d+[.,]\d+|\d+)\s*kg/gi;
+  const maxAttemptPattern =
+    /(?:provato|testato|fatto|tentato)\s+(?:il\s+)?massimale[^\.!?]{0,40}?\b(squat|bench|deadlift|stacco|clean|jerk|press|panca|girata)\s*[^\.!?]{0,30}?(?:a|facile\s+a|salito\s+a|arrivato\s+a)\s+(\d+[.,]\d+|\d+)\s*kg/gi
   while ((match = maxAttemptPattern.exec(text)) !== null) {
-    const exerciseName = match[1];
-    const weight = parseFloat(match[2].replace(',', '.'));
+    const exerciseName = match[1]
+    const weight = parseFloat(match[2].replace(',', '.'))
     const categoryMap = {
-      'squat': 'squat', 'bench': 'bench', 'panca': 'bench', 'deadlift': 'deadlift', 'stacco': 'deadlift',
-      'clean': 'clean', 'jerk': 'jerk', 'press': 'press', 'girata': 'clean'
-    };
-    const category = categoryMap[exerciseName.toLowerCase()] || 'other';
-    const isDuplicate = pbs.some(pb => pb.type === 'strength' && pb.category === category && Math.abs(pb.weight_kg - weight) < 0.5);
+      squat: 'squat',
+      bench: 'bench',
+      panca: 'bench',
+      deadlift: 'deadlift',
+      stacco: 'deadlift',
+      clean: 'clean',
+      jerk: 'jerk',
+      press: 'press',
+      girata: 'clean'
+    }
+    const category = categoryMap[exerciseName.toLowerCase()] || 'other'
+    const isDuplicate = pbs.some(
+      (pb) =>
+        pb.type === 'strength' && pb.category === category && Math.abs(pb.weight_kg - weight) < 0.5
+    )
     if (!isDuplicate) {
-      pbs.push({ type: 'strength', exercise_name: exerciseName, category, weight_kg: weight, reps: 1, is_personal_best: true });
+      pbs.push({
+        type: 'strength',
+        exercise_name: exerciseName,
+        category,
+        weight_kg: weight,
+        reps: 1,
+        is_personal_best: true
+      })
     }
   }
 
   // PB forza implicito: "palestra squat 150kg" (senza PB esplicito)
   if (text.match(/\bpalestra\b|\bforza\b|\bmassimali\b/i)) {
-    const implicitStrengthPattern = /(?:palestra|forza)\s*:?\s*(squat|bench|deadlift|stacco|clean|jerk|press|military\s+press|panca|trazioni?|girata)\s+(?:al\s+petto\s+)?(\d+[.,]\d+|\d+)\s*kg(?!\s+(?:x|reps|set))/gi;
+    const implicitStrengthPattern =
+      /(?:palestra|forza)\s*:?\s*(squat|bench|deadlift|stacco|clean|jerk|press|military\s+press|panca|trazioni?|girata)\s+(?:al\s+petto\s+)?(\d+[.,]\d+|\d+)\s*kg(?!\s+(?:x|reps|set))/gi
     while ((match = implicitStrengthPattern.exec(text)) !== null) {
-      const exerciseName = match[1];
-      const weight = parseFloat(match[2].replace(',', '.'));
+      const exerciseName = match[1]
+      const weight = parseFloat(match[2].replace(',', '.'))
       const categoryMap = {
-        'squat': 'squat', 'bench': 'bench', 'panca': 'bench', 'deadlift': 'deadlift', 'stacco': 'deadlift',
-        'clean': 'clean', 'jerk': 'jerk', 'press': 'press', 'military press': 'press', 'military': 'press',
-        'trazioni': 'pull', 'trazione': 'pull', 'girata': 'clean'
-      };
-      const category = categoryMap[exerciseName.toLowerCase()] || 'other';
-      const isDuplicate = pbs.some(pb => pb.type === 'strength' && pb.category === category && Math.abs(pb.weight_kg - weight) < 0.5);
+        squat: 'squat',
+        bench: 'bench',
+        panca: 'bench',
+        deadlift: 'deadlift',
+        stacco: 'deadlift',
+        clean: 'clean',
+        jerk: 'jerk',
+        press: 'press',
+        'military press': 'press',
+        military: 'press',
+        trazioni: 'pull',
+        trazione: 'pull',
+        girata: 'clean'
+      }
+      const category = categoryMap[exerciseName.toLowerCase()] || 'other'
+      const isDuplicate = pbs.some(
+        (pb) =>
+          pb.type === 'strength' &&
+          pb.category === category &&
+          Math.abs(pb.weight_kg - weight) < 0.5
+      )
       if (!isDuplicate) {
-        pbs.push({ type: 'strength', exercise_name: exerciseName, category, weight_kg: weight, reps: 1, is_personal_best: true, implicit: true });
+        pbs.push({
+          type: 'strength',
+          exercise_name: exerciseName,
+          category,
+          weight_kg: weight,
+          reps: 1,
+          is_personal_best: true,
+          implicit: true
+        })
       }
     }
   }
 
-  return pbs;
+  return pbs
 }
 
 // =====================
@@ -1076,58 +1179,82 @@ export function extractPersonalBests(text) {
 // =====================
 
 function isPlausibleSprint(distance, time) {
-  if (!distance || !time) return false;
-  if (time <= 0 || time > 600) return false;
-  const minPlausible = distance / 12; // es: 100m -> ~8.3s minimo plausibile
-  return time >= minPlausible;
+  if (!distance || !time) return false
+  if (time <= 0 || time > 600) return false
+  const minPlausible = distance / 12 // es: 100m -> ~8.3s minimo plausibile
+  return time >= minPlausible
 }
 
 function mapStrengthCategory(exerciseName = '') {
-  const n = (exerciseName || '').toLowerCase();
-  if (n.includes('squat')) return 'squat';
-  if (n.includes('panca') || n.includes('bench')) return 'bench';
-  if (n.includes('stacco') || n.includes('deadlift')) return 'deadlift';
-  if (n.includes('clean') || n.includes('girata')) return 'clean';
-  if (n.includes('jerk')) return 'jerk';
-  if (n.includes('press')) return 'press';
-  if (n.includes('traz') || n.includes('pull')) return 'pull';
-  return 'lift';
+  const n = (exerciseName || '').toLowerCase()
+  if (n.includes('squat')) return 'squat'
+  if (n.includes('panca') || n.includes('bench')) return 'bench'
+  if (n.includes('stacco') || n.includes('deadlift')) return 'deadlift'
+  if (n.includes('clean') || n.includes('girata')) return 'clean'
+  if (n.includes('jerk')) return 'jerk'
+  if (n.includes('press')) return 'press'
+  if (n.includes('traz') || n.includes('pull')) return 'pull'
+  return 'lift'
 }
 
 export function derivePBsFromSessions(sessions) {
-  const pbs = [];
-  if (!sessions || sessions.length === 0) return pbs;
+  const pbs = []
+  if (!sessions || sessions.length === 0) return pbs
 
-  const bestStrength = {};
+  const bestStrength = {}
 
-  sessions.forEach(session => {
-    const sessionType = (session.session?.type || '').toLowerCase();
-    const isCompetition = sessionType === 'gara';
+  sessions.forEach((session) => {
+    const sessionType = (session.session?.type || '').toLowerCase()
+    const isCompetition = sessionType === 'gara'
 
-    (session.groups || []).forEach(group => {
-      (group.sets || []).forEach(set => {
-        const distance = set.distance_m || null;
-        const time = set.time_s || null;
+    ;(session.groups || []).forEach((group) => {
+      ;(group.sets || []).forEach((set) => {
+        const distance = set.distance_m || null
+        const time = set.time_s || null
         if (distance && time && isPlausibleSprint(distance, time)) {
           if (isCompetition) {
-            const duplicate = pbs.some(pb => pb.type === 'race' && pb.distance_m === distance && Math.abs(pb.time_s - time) < 0.05);
+            const duplicate = pbs.some(
+              (pb) =>
+                pb.type === 'race' &&
+                pb.distance_m === distance &&
+                Math.abs(pb.time_s - time) < 0.05
+            )
             if (!duplicate) {
-              pbs.push({ type: 'race', distance_m: distance, time_s: time, is_personal_best: true, derived: true });
+              pbs.push({
+                type: 'race',
+                distance_m: distance,
+                time_s: time,
+                is_personal_best: true,
+                derived: true
+              })
             }
           } else {
-            const exerciseName = `Sprint ${distance}m`;
-            const duplicate = pbs.some(pb => pb.type === 'training' && pb.exercise_name === exerciseName && Math.abs(pb.performance_value - time) < 0.05);
+            const exerciseName = `Sprint ${distance}m`
+            const duplicate = pbs.some(
+              (pb) =>
+                pb.type === 'training' &&
+                pb.exercise_name === exerciseName &&
+                Math.abs(pb.performance_value - time) < 0.05
+            )
             if (!duplicate) {
-              pbs.push({ type: 'training', exercise_name: exerciseName, exercise_type: 'sprint', performance_value: time, performance_unit: 'seconds', is_personal_best: true, derived: true });
+              pbs.push({
+                type: 'training',
+                exercise_name: exerciseName,
+                exercise_type: 'sprint',
+                performance_value: time,
+                performance_unit: 'seconds',
+                is_personal_best: true,
+                derived: true
+              })
             }
           }
         }
 
         if (set.weight_kg) {
-          const exerciseName = set.exercise_name || 'Forza';
-          const key = exerciseName.toLowerCase();
-          const category = mapStrengthCategory(exerciseName);
-          const current = bestStrength[key];
+          const exerciseName = set.exercise_name || 'Forza'
+          const key = exerciseName.toLowerCase()
+          const category = mapStrengthCategory(exerciseName)
+          const current = bestStrength[key]
           if (!current || set.weight_kg > current.weight_kg) {
             bestStrength[key] = {
               type: 'strength',
@@ -1137,67 +1264,71 @@ export function derivePBsFromSessions(sessions) {
               reps: set.reps || 1,
               is_personal_best: true,
               derived: true
-            };
+            }
           }
         }
-      });
-    });
-  });
+      })
+    })
+  })
 
   // Aggiungi i migliori massimali per esercizio
-  Object.values(bestStrength).forEach(pb => pbs.push(pb));
+  Object.values(bestStrength).forEach((pb) => pbs.push(pb))
 
-  return pbs;
+  return pbs
 }
 
 export function mergePersonalBests(textPBs, derivedPBs) {
-  const merged = [...(textPBs || [])];
-  (derivedPBs || []).forEach(pb => {
-    let duplicate = false;
-    
+  const merged = [...(textPBs || [])]
+  ;(derivedPBs || []).forEach((pb) => {
+    let duplicate = false
+
     if (pb.type === 'race') {
       // Race PB: confronta distance_m e time_s
-      duplicate = merged.some(m => 
-        m.type === 'race' && 
-        m.distance_m === pb.distance_m && 
-        Math.abs(m.time_s - pb.time_s) < 0.05
-      );
+      duplicate = merged.some(
+        (m) =>
+          m.type === 'race' &&
+          m.distance_m === pb.distance_m &&
+          Math.abs(m.time_s - pb.time_s) < 0.05
+      )
     } else if (pb.type === 'training') {
       // Training PB: confronta exercise_name e performance_value
-      duplicate = merged.some(m => 
-        m.type === 'training' && 
-        m.exercise_name === pb.exercise_name && 
-        m.performance_unit === pb.performance_unit &&
-        Math.abs(m.performance_value - pb.performance_value) < 0.05
-      );
+      duplicate = merged.some(
+        (m) =>
+          m.type === 'training' &&
+          m.exercise_name === pb.exercise_name &&
+          m.performance_unit === pb.performance_unit &&
+          Math.abs(m.performance_value - pb.performance_value) < 0.05
+      )
     } else if (pb.type === 'strength') {
       // Strength PB: confronta exercise_name + category + weight_kg
-      duplicate = merged.some(m => 
-        m.type === 'strength' && 
-        m.category === pb.category &&
-        m.exercise_name === pb.exercise_name && 
-        Math.abs(m.weight_kg - pb.weight_kg) < 0.5
-      );
+      duplicate = merged.some(
+        (m) =>
+          m.type === 'strength' &&
+          m.category === pb.category &&
+          m.exercise_name === pb.exercise_name &&
+          Math.abs(m.weight_kg - pb.weight_kg) < 0.5
+      )
     }
-    
-    if (!duplicate) merged.push(pb);
-  });
-  return merged;
+
+    if (!duplicate) merged.push(pb)
+  })
+  return merged
 }
 
 export function extractInjuries(text) {
-  const injuries = [];
-  const pattern = /(infortunio|lesione|strappo|contrattura|dolore|fastidio)\s+(?:al|alla|allo|ai|alle|dietro\s+al)?\s*([a-zàèéìòù\s]+)/gi;
-  let match;
+  const injuries = []
+  const pattern =
+    /(infortunio|lesione|strappo|contrattura|dolore|fastidio)\s+(?:al|alla|allo|ai|alle|dietro\s+al)?\s*([a-zàèéìòù\s]+)/gi
+  let match
   while ((match = pattern.exec(text)) !== null) {
-    const type = match[1];
-    const bodyPart = match[2].trim();
+    const type = match[1]
+    const bodyPart = match[2].trim()
     injuries.push({
       injury_type: type,
       body_part: bodyPart,
       start_date: formatLocalDate(new Date()),
       severity: 'moderate'
-    });
+    })
   }
-  return injuries;
+  return injuries
 }

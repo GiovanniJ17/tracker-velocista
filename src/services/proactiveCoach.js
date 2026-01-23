@@ -1,7 +1,7 @@
 /**
  * Proactive Coach Service
  * Sistema di alert automatici per prevenire infortuni e sovraccarico
- * 
+ *
  * Features:
  * - Detect volume spikes (>20% week-over-week)
  * - Monitor injury risk zones (carico + infortunio attivo)
@@ -9,36 +9,37 @@
  * - Track recovery patterns
  */
 
-import { supabase } from '../lib/supabase';
-import { startOfWeek, endOfWeek, subWeeks, format } from 'date-fns';
+import { collection, getDocs, orderBy, query, where } from 'firebase/firestore'
+import { startOfWeek, endOfWeek, subWeeks, format } from 'date-fns'
+import { firestore } from '../lib/firebase'
 
 /**
  * Analizza lo stato dell'atleta e genera alert proattivi
  */
 export async function generateProactiveAlerts() {
-  const alerts = [];
+  const alerts = []
 
   try {
     // 1. Check volume spike (settimana corrente vs settimana scorsa)
-    const volumeAlert = await checkVolumeSpikeAlert();
-    if (volumeAlert) alerts.push(volumeAlert);
+    const volumeAlert = await checkVolumeSpikeAlert()
+    if (volumeAlert) alerts.push(volumeAlert)
 
     // 2. Check carico con infortunio attivo
-    const injuryAlert = await checkActiveInjuryLoadAlert();
-    if (injuryAlert) alerts.push(injuryAlert);
+    const injuryAlert = await checkActiveInjuryLoadAlert()
+    if (injuryAlert) alerts.push(injuryAlert)
 
     // 3. Check necessità deload (3+ settimane ad alta intensità)
-    const deloadAlert = await checkDeloadAlert();
-    if (deloadAlert) alerts.push(deloadAlert);
+    const deloadAlert = await checkDeloadAlert()
+    if (deloadAlert) alerts.push(deloadAlert)
 
     // 4. Check pattern recupero insufficiente
-    const recoveryAlert = await checkRecoveryPatternAlert();
-    if (recoveryAlert) alerts.push(recoveryAlert);
+    const recoveryAlert = await checkRecoveryPatternAlert()
+    if (recoveryAlert) alerts.push(recoveryAlert)
 
-    return alerts;
+    return alerts
   } catch (error) {
-    console.error('[proactiveCoach] Error generating alerts:', error);
-    return [];
+    console.error('[proactiveCoach] Error generating alerts:', error)
+    return []
   }
 }
 
@@ -46,19 +47,20 @@ export async function generateProactiveAlerts() {
  * Alert: Incremento volume settimanale > 20%
  */
 async function checkVolumeSpikeAlert() {
-  const thisWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const lastWeekStart = subWeeks(thisWeekStart, 1);
+  const thisWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const lastWeekStart = subWeeks(thisWeekStart, 1)
 
   const [thisWeekData, lastWeekData] = await Promise.all([
     getWeeklyVolume(thisWeekStart),
     getWeeklyVolume(lastWeekStart)
-  ]);
+  ])
 
   if (!lastWeekData.totalVolume || lastWeekData.totalVolume === 0) {
-    return null; // Prima settimana, niente confronto
+    return null // Prima settimana, niente confronto
   }
 
-  const increase = ((thisWeekData.totalVolume - lastWeekData.totalVolume) / lastWeekData.totalVolume) * 100;
+  const increase =
+    ((thisWeekData.totalVolume - lastWeekData.totalVolume) / lastWeekData.totalVolume) * 100
 
   if (increase > 20) {
     return {
@@ -66,79 +68,88 @@ async function checkVolumeSpikeAlert() {
       severity: increase > 40 ? 'high' : 'medium',
       title: '⚠️ Aumento volume eccessivo',
       message: `Il volume di questa settimana è aumentato del ${Math.round(increase)}% rispetto alla scorsa (${Math.round(thisWeekData.totalVolume)}m vs ${Math.round(lastWeekData.totalVolume)}m). Rischio infortunio elevato.`,
-      recommendation: 'Considera di ridurre il volume del 10-15% nei prossimi 2-3 giorni o inserire una sessione di scarico.',
+      recommendation:
+        'Considera di ridurre il volume del 10-15% nei prossimi 2-3 giorni o inserire una sessione di scarico.',
       data: {
         currentWeek: thisWeekData,
         lastWeek: lastWeekData,
         increase: Math.round(increase)
       }
-    };
+    }
   }
 
-  return null;
+  return null
 }
 
 /**
  * Alert: Carico elevato con infortunio attivo nella zona coinvolta
  */
 async function checkActiveInjuryLoadAlert() {
-  // Recupera infortuni attivi
-  const { data: injuries } = await supabase
-    .from('injury_history')
-    .select('*')
-    .is('end_date', null);
+  const injuriesQuery = query(
+    collection(firestore, 'injury_history'),
+    where('end_date', '==', null)
+  )
+  const injuriesSnap = await getDocs(injuriesQuery)
+  const injuries = injuriesSnap.docs.map((docSnap) => docSnap.data())
 
-  if (!injuries || injuries.length === 0) return null;
+  if (!injuries || injuries.length === 0) return null
 
-  // Recupera sessioni dell'ultima settimana
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const { data: sessions } = await supabase
-    .from('training_sessions')
-    .select(`
-      *,
-      workout_groups (
-        *,
-        workout_sets (*)
-      )
-    `)
-    .gte('date', weekStart.toISOString())
-    .order('date', { ascending: false });
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const weekStartStr = format(weekStart, 'yyyy-MM-dd')
+  const sessionsQuery = query(
+    collection(firestore, 'training_sessions'),
+    where('date', '>=', weekStartStr),
+    orderBy('date', 'desc')
+  )
+  const sessionsSnap = await getDocs(sessionsQuery)
+  const sessions = []
+  for (const sessionDoc of sessionsSnap.docs) {
+    const sessionData = { id: sessionDoc.id, ...sessionDoc.data(), workout_groups: [] }
+    const groupsSnap = await getDocs(collection(sessionDoc.ref, 'workout_groups'))
+    for (const groupDoc of groupsSnap.docs) {
+      const groupData = { id: groupDoc.id, ...groupDoc.data(), workout_sets: [] }
+      const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+      groupData.workout_sets = setsSnap.docs.map((setDoc) => ({ id: setDoc.id, ...setDoc.data() }))
+      sessionData.workout_groups.push(groupData)
+    }
+    sessions.push(sessionData)
+  }
 
-  if (!sessions || sessions.length === 0) return null;
+  if (!sessions || sessions.length === 0) return null
 
   // Check se c'è carico pesante su zona infortunata
-  const riskyExercises = [];
-  
-  sessions.forEach(session => {
-    session.workout_groups?.forEach(group => {
-      group.workout_sets?.forEach(set => {
-        injuries.forEach(injury => {
-          const bodyPart = injury.body_part.toLowerCase();
-          const exerciseName = set.exercise_name.toLowerCase();
-          
+  const riskyExercises = []
+
+  sessions.forEach((session) => {
+    session.workout_groups?.forEach((group) => {
+      group.workout_sets?.forEach((set) => {
+        injuries.forEach((injury) => {
+          const bodyPart = injury.body_part.toLowerCase()
+          const exerciseName = set.exercise_name.toLowerCase()
+
           // Mapping body parts -> esercizi
           const riskyMappings = {
-            'ginocchio': ['squat', 'lunge', 'affondi', 'sprint', 'salto'],
-            'schiena': ['deadlift', 'stacco', 'squat', 'row'],
-            'spalla': ['bench', 'panca', 'press', 'overhead'],
-            'tendine': ['sprint', 'salto', 'jump'],
-          };
-          
-          const riskyKeywords = riskyMappings[bodyPart] || [];
-          const isRisky = riskyKeywords.some(keyword => exerciseName.includes(keyword));
-          
+            ginocchio: ['squat', 'lunge', 'affondi', 'sprint', 'salto'],
+            schiena: ['deadlift', 'stacco', 'squat', 'row'],
+            spalla: ['bench', 'panca', 'press', 'overhead'],
+            tendine: ['sprint', 'salto', 'jump']
+          }
+
+          const riskyKeywords = riskyMappings[bodyPart] || []
+          const isRisky = riskyKeywords.some((keyword) => exerciseName.includes(keyword))
+
           if (isRisky && (set.weight_kg > 100 || set.category === 'sprint')) {
             riskyExercises.push({
               exercise: set.exercise_name,
               injury: injury.body_part,
               severity: injury.severity,
               sessionDate: session.date
-            });
+            })
           }
-        });
-      });
-    });
-  });
+        })
+      })
+    })
+  })
 
   if (riskyExercises.length > 0) {
     return {
@@ -151,28 +162,28 @@ async function checkActiveInjuryLoadAlert() {
         riskyExercises,
         activeInjuries: injuries
       }
-    };
+    }
   }
 
-  return null;
+  return null
 }
 
 /**
  * Alert: Deload necessario (3+ settimane consecutive ad alta intensità)
  */
 async function checkDeloadAlert() {
-  const weeks = 4;
-  const weeksData = [];
-  
+  const weeks = 4
+  const weeksData = []
+
   for (let i = 0; i < weeks; i++) {
-    const weekStart = subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), i);
-    const data = await getWeeklyVolume(weekStart);
-    weeksData.push(data);
+    const weekStart = subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), i)
+    const data = await getWeeklyVolume(weekStart)
+    weeksData.push(data)
   }
 
   // Check se ultime 3 settimane hanno RPE medio > 7
-  const lastThreeWeeks = weeksData.slice(0, 3);
-  const highIntensityWeeks = lastThreeWeeks.filter(w => w.avgRPE > 7).length;
+  const lastThreeWeeks = weeksData.slice(0, 3)
+  const highIntensityWeeks = lastThreeWeeks.filter((w) => w.avgRPE > 7).length
 
   if (highIntensityWeeks >= 3) {
     return {
@@ -180,40 +191,44 @@ async function checkDeloadAlert() {
       severity: 'medium',
       title: '💪 Tempo di scarico',
       message: `Hai completato ${highIntensityWeeks} settimane consecutive ad alta intensità (RPE medio > 7).`,
-      recommendation: 'Pianifica una settimana di scarico (volume -40%, intensità -20%) per ottimizzare il recupero e prevenire sovrallenamento.',
+      recommendation:
+        'Pianifica una settimana di scarico (volume -40%, intensità -20%) per ottimizzare il recupero e prevenire sovrallenamento.',
       data: {
         weeksData: lastThreeWeeks
       }
-    };
+    }
   }
 
-  return null;
+  return null
 }
 
 /**
  * Alert: Pattern recupero insufficiente (sessioni consecutive senza riposo)
  */
 async function checkRecoveryPatternAlert() {
-  const { data: sessions } = await supabase
-    .from('training_sessions')
-    .select('date, rpe')
-    .gte('date', subWeeks(new Date(), 2).toISOString())
-    .order('date', { ascending: false });
+  const startDate = format(subWeeks(new Date(), 2), 'yyyy-MM-dd')
+  const q = query(
+    collection(firestore, 'training_sessions'),
+    where('date', '>=', startDate),
+    orderBy('date', 'desc')
+  )
+  const snap = await getDocs(q)
+  const sessions = snap.docs.map((docSnap) => docSnap.data())
 
-  if (!sessions || sessions.length < 5) return null;
+  if (!sessions || sessions.length < 5) return null
 
   // Cerca streak di giorni consecutivi
-  const dates = sessions.map(s => new Date(s.date).getTime()).sort((a, b) => b - a);
-  let consecutiveDays = 1;
-  let maxStreak = 1;
+  const dates = sessions.map((s) => new Date(s.date).getTime()).sort((a, b) => b - a)
+  let consecutiveDays = 1
+  let maxStreak = 1
 
   for (let i = 0; i < dates.length - 1; i++) {
-    const diff = (dates[i] - dates[i + 1]) / (1000 * 60 * 60 * 24);
+    const diff = (dates[i] - dates[i + 1]) / (1000 * 60 * 60 * 24)
     if (Math.abs(diff - 1) < 0.1) {
-      consecutiveDays++;
-      maxStreak = Math.max(maxStreak, consecutiveDays);
+      consecutiveDays++
+      maxStreak = Math.max(maxStreak, consecutiveDays)
     } else {
-      consecutiveDays = 1;
+      consecutiveDays = 1
     }
   }
 
@@ -223,67 +238,77 @@ async function checkRecoveryPatternAlert() {
       severity: 'medium',
       title: '😴 Recupero insufficiente',
       message: `Hai allenato per ${maxStreak} giorni consecutivi senza riposo completo.`,
-      recommendation: 'Inserisci almeno 1 giorno di riposo totale ogni 5-6 giorni di allenamento per ottimizzare il recupero muscolare.',
+      recommendation:
+        'Inserisci almeno 1 giorno di riposo totale ogni 5-6 giorni di allenamento per ottimizzare il recupero muscolare.',
       data: {
         consecutiveDays: maxStreak
       }
-    };
+    }
   }
 
-  return null;
+  return null
 }
 
 /**
  * Helper: Calcola volume settimanale
  */
 async function getWeeklyVolume(weekStart) {
-  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-
-  const { data: sessions } = await supabase
-    .from('training_sessions')
-    .select(`
-      *,
-      workout_groups (
-        *,
-        workout_sets (*)
-      )
-    `)
-    .gte('date', weekStart.toISOString())
-    .lte('date', weekEnd.toISOString());
-
-  if (!sessions || sessions.length === 0) {
-    return { totalVolume: 0, totalTonnage: 0, avgRPE: 0, sessionCount: 0 };
+  const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+  const startStr = format(weekStart, 'yyyy-MM-dd')
+  const endStr = format(weekEnd, 'yyyy-MM-dd')
+  const sessionsQuery = query(
+    collection(firestore, 'training_sessions'),
+    where('date', '>=', startStr),
+    where('date', '<=', endStr),
+    orderBy('date', 'asc')
+  )
+  const sessionsSnap = await getDocs(sessionsQuery)
+  const sessions = []
+  for (const sessionDoc of sessionsSnap.docs) {
+    const sessionData = { id: sessionDoc.id, ...sessionDoc.data(), workout_groups: [] }
+    const groupsSnap = await getDocs(collection(sessionDoc.ref, 'workout_groups'))
+    for (const groupDoc of groupsSnap.docs) {
+      const groupData = { id: groupDoc.id, ...groupDoc.data(), workout_sets: [] }
+      const setsSnap = await getDocs(collection(groupDoc.ref, 'workout_sets'))
+      groupData.workout_sets = setsSnap.docs.map((setDoc) => ({ id: setDoc.id, ...setDoc.data() }))
+      sessionData.workout_groups.push(groupData)
+    }
+    sessions.push(sessionData)
   }
 
-  let totalDistance = 0;
-  let totalTonnage = 0;
-  let totalRPE = 0;
-  let rpeCount = 0;
+  if (!sessions || sessions.length === 0) {
+    return { totalVolume: 0, totalTonnage: 0, avgRPE: 0, sessionCount: 0 }
+  }
 
-  sessions.forEach(session => {
+  let totalDistance = 0
+  let totalTonnage = 0
+  let totalRPE = 0
+  let rpeCount = 0
+
+  sessions.forEach((session) => {
     if (session.rpe) {
-      totalRPE += session.rpe;
-      rpeCount++;
+      totalRPE += session.rpe
+      rpeCount++
     }
 
-    session.workout_groups?.forEach(group => {
-      group.workout_sets?.forEach(set => {
+    session.workout_groups?.forEach((group) => {
+      group.workout_sets?.forEach((set) => {
         if (set.distance_m) {
-          totalDistance += set.distance_m * (set.sets || 1);
+          totalDistance += set.distance_m * (set.sets || 1)
         }
         if (set.weight_kg) {
-          totalTonnage += set.weight_kg * (set.sets || 1) * (set.reps || 1);
+          totalTonnage += set.weight_kg * (set.sets || 1) * (set.reps || 1)
         }
-      });
-    });
-  });
+      })
+    })
+  })
 
   return {
     totalVolume: totalDistance,
     totalTonnage,
     avgRPE: rpeCount > 0 ? totalRPE / rpeCount : 0,
     sessionCount: sessions.length
-  };
+  }
 }
 
 /**
@@ -291,6 +316,6 @@ async function getWeeklyVolume(weekStart) {
  */
 export async function saveAlert(alert) {
   // TODO: Implementa tabella 'coach_alerts' nel DB per storico
-  console.log('[proactiveCoach] Alert generated:', alert);
-  return alert;
+  console.log('[proactiveCoach] Alert generated:', alert)
+  return alert
 }

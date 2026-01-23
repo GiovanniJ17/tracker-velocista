@@ -1,17 +1,17 @@
-import { useState } from 'react';
-import { PlusCircle, BarChart3, Calendar, User } from 'lucide-react';
-import AITrainingInput from './components/AITrainingInput';
-import TrainingDashboard from './components/TrainingDashboard';
-import SessionHistory from './components/History/SessionHistory';
-import AthleteProfile from './components/AthleteProfile';
+import { useState } from 'react'
+import { PlusCircle, BarChart3, Calendar, User } from 'lucide-react'
+import AITrainingInput from './components/AITrainingInput'
+import TrainingDashboard from './components/TrainingDashboard'
+import SessionHistory from './components/History/SessionHistory'
+import AthleteProfile from './components/AthleteProfile'
 
 function App() {
-  const [activeTab, setActiveTab] = useState('input'); // 'input', 'stats', 'history', 'profile'
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Trigger per refresh profilo
+  const [activeTab, setActiveTab] = useState('input') // 'input', 'stats', 'history', 'profile'
+  const [refreshTrigger, setRefreshTrigger] = useState(0) // Trigger per refresh profilo
 
   const handleDataSaved = () => {
-    setRefreshTrigger(prev => prev + 1); // Incrementa per forzare refresh
-  };
+    setRefreshTrigger((prev) => prev + 1) // Incrementa per forzare refresh
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
@@ -91,7 +91,7 @@ function App() {
         </div>
       </footer>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
