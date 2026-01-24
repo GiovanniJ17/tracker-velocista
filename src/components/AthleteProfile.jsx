@@ -321,8 +321,8 @@ export default function AthleteProfile() {
       </div>
 
       {/* Tabs */}
-      <Card variant="stat" color="blue" shine className="p-2 sm:p-3">
-        <div className="flex gap-2 overflow-x-auto">
+      <Card variant="stat" color="blue" shine className="p-2 sm:p-3 overflow-hidden">
+        <div className="flex gap-1 sm:gap-2 overflow-x-auto overflow-y-hidden scrollbar-thin">
           {[
             { id: 'overview', label: 'Overview', icon: Trophy },
             { id: 'race-pbs', label: 'PB Gara', icon: Target },
@@ -335,12 +335,13 @@ export default function AthleteProfile() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`tab-pill min-h-[44px] whitespace-nowrap ${
+                className={`tab-pill min-h-[44px] whitespace-nowrap px-3 sm:px-4 ${
                   activeTab === tab.id ? 'tab-pill-active' : ''
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                {tab.label}
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden text-xs">{tab.label}</span>
               </button>
             )
           })}

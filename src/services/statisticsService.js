@@ -769,10 +769,21 @@ export function getSprintLoadModel(sessions) {
   return { series: merged, current }
 }
 
-export function getSprintPeriodComparison(sessions, raceRecords) {
-  const now = new Date()
-  const lastStart = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000)
-  const prevStart = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000)
+/**
+ * Sprint period comparison - compares current period vs previous period
+ * @param {Array} sessions - All sessions
+ * @param {Array} raceRecords - All race records
+ * @param {Date} startDate - Start of the current period (optional, defaults to 28 days ago)
+ * @param {Date} endDate - End of the current period (optional, defaults to now)
+ */
+export function getSprintPeriodComparison(sessions, raceRecords, startDate = null, endDate = null) {
+  const now = endDate || new Date()
+  const periodStart = startDate || new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000)
+  
+  // Calculate the period duration to determine the previous period
+  const periodDuration = now.getTime() - periodStart.getTime()
+  const prevStart = new Date(periodStart.getTime() - periodDuration)
+  const prevEnd = periodStart
 
   const sprintSessions = sessions
     .map((session) => ({ ...session, __date: getRecordTimestamp({ date: session.date }) }))
@@ -822,8 +833,8 @@ export function getSprintPeriodComparison(sessions, raceRecords) {
     }
   }
 
-  const current = periodStats(lastStart, now)
-  const previous = periodStats(prevStart, lastStart)
+  const current = periodStats(periodStart, now)
+  const previous = periodStats(prevStart, prevEnd)
 
   const delta = (currentValue, previousValue) => {
     if (currentValue === null || previousValue === null) return null
@@ -834,6 +845,7 @@ export function getSprintPeriodComparison(sessions, raceRecords) {
   return {
     current,
     previous,
+    periodDays: Math.round(periodDuration / (24 * 60 * 60 * 1000)),
     delta: {
       sessions: delta(current.sessions, previous.sessions),
       distance_m: delta(current.distance_m, previous.distance_m),

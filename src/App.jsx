@@ -22,15 +22,14 @@ function App() {
 
   return (
     <div className="min-h-screen text-white">
-      {/* Background with subtle gradient */}
+      {/* Background base gradient */}
       <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 -z-20" />
       
-      {/* Decorative blurred orbs - repositioned for better visual balance */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div className="absolute -top-20 -left-20 w-80 h-80 bg-cyan-500/8 rounded-full blur-3xl" />
-        <div className="absolute top-1/4 right-0 w-96 h-96 bg-purple-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-emerald-500/6 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl" />
+      {/* Animated mesh background orbs */}
+      <div className="mesh-background -z-10">
+        <div className="mesh-orb mesh-orb-1" />
+        <div className="mesh-orb mesh-orb-2" />
+        <div className="mesh-orb mesh-orb-3" />
       </div>
       
       {/* Grain texture overlay */}

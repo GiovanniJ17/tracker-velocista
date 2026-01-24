@@ -26,8 +26,12 @@
   --chart-cyan: #06b6d4;
   --chart-orange: #f97316;
   
+  /* Font families */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  
   /* Typography */
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   color-scheme: dark;
   color: rgba(255, 255, 255, 0.9);
@@ -70,6 +74,150 @@
   z-index: 1000;
   opacity: 0.03;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(71 85 105 / 0.5) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(71 85 105 / 0.5);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(100 116 139 / 0.6);
+}
+
+/* ===== ANIMATED MESH BACKGROUND ===== */
+.mesh-background {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mesh-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.4;
+  will-change: transform;
+}
+
+.mesh-orb-1 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.3) 0%, transparent 70%);
+  top: -200px;
+  left: -200px;
+  animation: orb-float-1 25s ease-in-out infinite;
+}
+
+.mesh-orb-2 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.25) 0%, transparent 70%);
+  top: 40%;
+  right: -150px;
+  animation: orb-float-2 30s ease-in-out infinite;
+}
+
+.mesh-orb-3 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.2) 0%, transparent 70%);
+  bottom: -100px;
+  left: 30%;
+  animation: orb-float-3 20s ease-in-out infinite;
+}
+
+@keyframes orb-float-1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(50px, 30px) rotate(5deg); }
+  50% { transform: translate(20px, 60px) rotate(-5deg); }
+  75% { transform: translate(-30px, 40px) rotate(3deg); }
+}
+
+@keyframes orb-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, -30px) scale(1.1); }
+  66% { transform: translate(30px, 20px) scale(0.95); }
+}
+
+@keyframes orb-float-3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-40px, -50px); }
+}
+
+/* ===== MONOSPACE DATA TYPOGRAPHY ===== */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.stat-value,
+.data-value,
+.timer-value,
+.chart-value {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-feature-settings: "tnum" 1; /* Tabular numbers */
+}
+
+/* ===== NEON CHART EFFECTS ===== */
+.recharts-line-curve,
+.recharts-area-curve {
+  filter: drop-shadow(0 0 4px var(--chart-blue));
+}
+
+.recharts-line-curve[stroke*="10b981"],
+.recharts-area-curve[stroke*="10b981"] {
+  filter: drop-shadow(0 0 4px var(--chart-green));
+}
+
+.recharts-line-curve[stroke*="f59e0b"],
+.recharts-area-curve[stroke*="f59e0b"] {
+  filter: drop-shadow(0 0 4px var(--chart-yellow));
+}
+
+.recharts-line-curve[stroke*="ef4444"],
+.recharts-area-curve[stroke*="ef4444"] {
+  filter: drop-shadow(0 0 4px var(--chart-red));
+}
+
+.recharts-line-curve[stroke*="8b5cf6"],
+.recharts-area-curve[stroke*="8b5cf6"] {
+  filter: drop-shadow(0 0 4px var(--chart-purple));
+}
+
+/* Neon bar effect */
+.recharts-bar-rectangle {
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+/* Chart axis styling */
+.recharts-cartesian-axis-tick-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: rgba(148, 163, 184, 0.8);
+}
+
+.recharts-legend-item-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 /* ===== COMPONENT LAYER ===== */
@@ -239,6 +387,9 @@
   
   .stat-value {
     @apply text-2xl sm:text-3xl font-bold text-white;
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
+    font-feature-settings: "tnum" 1;
   }
 
   /* ===== CHIP/BADGE ===== */
@@ -283,12 +434,34 @@
   .tab-pill {
     @apply flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium 
            transition-all duration-200 text-slate-400 hover:text-white hover:bg-white/10
-           flex-1 justify-center;
+           flex-1 justify-center relative;
   }
   
   .tab-pill-active {
     @apply bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-white 
            border border-cyan-500/30 shadow-lg shadow-cyan-500/10;
+  }
+  
+  /* Active indicator glow line */
+  .tab-pill-active::after {
+    content: '';
+    @apply absolute -bottom-px left-1/4 right-1/4 h-0.5 
+           bg-gradient-to-r from-transparent via-cyan-400 to-transparent
+           rounded-full;
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+  }
+  
+  /* Nav tab active indicator */
+  .nav-tab-active::after {
+    content: '';
+    @apply absolute -bottom-px left-1/4 right-1/4 h-0.5 
+           bg-gradient-to-r from-transparent via-cyan-400 to-transparent
+           rounded-full;
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+  }
+  
+  .nav-tab {
+    @apply relative;
   }
 
   /* ===== SECTION HEADER ===== */
@@ -308,7 +481,8 @@
   .input {
     @apply w-full px-4 py-2.5 bg-slate-800/50 border border-slate-600/50 rounded-xl 
            text-sm text-white placeholder-slate-400 transition-all duration-200
-           focus:border-cyan-500/50 focus:bg-slate-800/70;
+           focus:border-cyan-500/50 focus:bg-slate-800/70
+           min-h-[44px]; /* Touch target minimum */
   }
   
   .textarea {
@@ -318,7 +492,8 @@
   .select {
     @apply px-4 py-2.5 bg-slate-800/50 border border-slate-600/50 rounded-xl 
            text-sm text-white cursor-pointer transition-all duration-200
-           focus:border-cyan-500/50 focus:bg-slate-800/70;
+           focus:border-cyan-500/50 focus:bg-slate-800/70
+           min-h-[44px]; /* Touch target minimum */
   }
 
   /* ===== WIDGET CARDS (Legacy + Enhanced) ===== */

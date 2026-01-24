@@ -108,9 +108,32 @@ export default function TrainingDashboard() {
   const [adaptiveError, setAdaptiveError] = useState(null)
 
   const sprintLoadModel = useMemo(() => getSprintLoadModel(rawData.sessions), [rawData.sessions])
+  
+  // Calculate period dates for sprint comparison based on the selected period filter
+  const periodDates = useMemo(() => {
+    const end = endDate || new Date()
+    let start = startDate
+    if (!start) {
+      switch (period) {
+        case 'week':
+          start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+          break
+        case 'month':
+          start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+          break
+        case '3months':
+          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+          break
+        default:
+          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+      }
+    }
+    return { start, end }
+  }, [period, startDate, endDate])
+  
   const sprintComparison = useMemo(
-    () => getSprintPeriodComparison(rawData.sessions, rawData.raceRecords),
-    [rawData.raceRecords, rawData.sessions]
+    () => getSprintPeriodComparison(rawData.sessions, rawData.raceRecords, periodDates.start, periodDates.end),
+    [rawData.raceRecords, rawData.sessions, periodDates]
   )
   const sprintTargetBands = useMemo(
     () => getTargetTimeBands(rawData.raceRecords),
@@ -143,25 +166,40 @@ export default function TrainingDashboard() {
 
     // Calcola date in base al period
     const end = endDate || new Date()
-    let start = startDate
+    let periodStart = startDate
 
-    if (!start) {
+    if (!periodStart) {
       switch (period) {
         case 'week':
-          start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
+          periodStart = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
           break
         case 'month':
-          start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+          periodStart = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
           break
         case '3months':
-          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+          periodStart = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
           break
         default:
-          start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
+          periodStart = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000)
       }
     }
 
-    const result = await getStatsData(start, end)
+    // Calculate the max data range needed (includes chart window + buffer for comparison)
+    // Always fetch at least 180 days to support:
+    // - Chart windows up to 90 days
+    // - Period comparison (which needs 2x the period)
+    // - Sprint load EWMA calculations (needs 28+ days history)
+    let dataStart = periodStart
+    const chartWindowDays = chartWindow === '90d' ? 90 : chartWindow === '30d' ? 30 : 0
+    const periodDays = Math.ceil((end.getTime() - periodStart.getTime()) / (24 * 60 * 60 * 1000))
+    const maxNeededDays = Math.max(periodDays * 2, chartWindowDays, 180) // 2x for comparison, or chartWindow, min 180
+    
+    const fetchStart = new Date(end.getTime() - maxNeededDays * 24 * 60 * 60 * 1000)
+    if (fetchStart < dataStart) {
+      dataStart = fetchStart
+    }
+
+    const result = await getStatsData(dataStart, end)
 
     if (result.success) {
       const { sessions, raceRecords, trainingRecords, strengthRecords, injuries } = result.data
@@ -979,69 +1017,70 @@ export default function TrainingDashboard() {
           <CardHeader>
             <SectionTitle title="Sprint Summary" subtitle="I 5 numeri chiave" icon={<Trophy className="w-5 h-5" />} />
           </CardHeader>
-          <CardBody className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm text-gray-200">
-            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
+          {/* Horizontal scroll on mobile, grid on larger screens */}
+          <CardBody className="flex gap-3 overflow-x-auto pb-2 sm:grid sm:grid-cols-2 lg:grid-cols-5 sm:overflow-visible text-sm text-gray-200 scrollbar-thin scrollbar-thumb-slate-600">
+            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600 min-w-[160px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
               <div className="flex items-center gap-2 mb-1">
                 <div className="icon-tile icon-tile-sm text-sky-300">
                   <Timer className="w-4 h-4" />
                 </div>
                 <div className="text-gray-400 text-xs uppercase">Recenti 60/100/200</div>
               </div>
-              <div className="text-white mt-1 text-lg font-semibold">
+              <div className="text-white mt-1 text-lg font-semibold font-mono">
                 <div className="flex flex-col gap-1 text-sm">
-                  <span>60m: {formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[60])}</span>
-                  <span>100m: {formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[100])}</span>
-                  <span>200m: {formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[200])}</span>
+                  <span>60m: <span className="stat-value text-sm">{formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[60])}</span></span>
+                  <span>100m: <span className="stat-value text-sm">{formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[100])}</span></span>
+                  <span>200m: <span className="stat-value text-sm">{formatSeconds(sprinterSummary.sprintMetrics?.recentBestByDistance?.[200])}</span></span>
                 </div>
               </div>
             </div>
-            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
+            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600 min-w-[140px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
               <div className="flex items-center gap-2 mb-1">
                 <div className="icon-tile icon-tile-sm text-emerald-300">
                   <Trophy className="w-4 h-4" />
                 </div>
                 <div className="text-gray-400 text-xs uppercase">Best 100m</div>
               </div>
-              <div className="text-white mt-1 text-lg font-semibold">
+              <div className="text-white mt-1 text-lg font-semibold stat-value">
                 {sprinterSummary.sprintMetrics?.bestTimes?.[100]
                   ? formatSeconds(sprinterSummary.sprintMetrics.bestTimes[100])
                   : '-'}
               </div>
             </div>
-            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
+            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600 min-w-[140px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
               <div className="flex items-center gap-2 mb-1">
                 <div className="icon-tile icon-tile-sm text-amber-300">
                   <Activity className="w-4 h-4" />
                 </div>
                 <div className="text-gray-400 text-xs uppercase">Top speed</div>
               </div>
-              <div className="text-white mt-1 text-lg font-semibold">
+              <div className="text-white mt-1 text-lg font-semibold stat-value">
                 {sprinterSummary.topSpeedMps
                   ? `${sprinterSummary.topSpeedMps.toFixed(2)} m/s`
                   : '-'}
               </div>
             </div>
-            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
+            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600 min-w-[140px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
               <div className="flex items-center gap-2 mb-1">
                 <div className="icon-tile icon-tile-sm text-sky-300">
                   <Trophy className="w-4 h-4" />
                 </div>
                 <div className="text-gray-400 text-xs uppercase">Best 200m</div>
               </div>
-              <div className="text-white mt-1 text-lg font-semibold">
+              <div className="text-white mt-1 text-lg font-semibold stat-value">
                 {sprinterSummary.sprintMetrics?.bestTimes?.[200]
                   ? formatSeconds(sprinterSummary.sprintMetrics.bestTimes[200])
                   : '-'}
               </div>
             </div>
-            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
+            <div className="panel-body bg-slate-700 rounded-lg border border-slate-600 min-w-[140px] flex-shrink-0 sm:min-w-0 sm:flex-shrink">
               <div className="flex items-center gap-2 mb-1">
                 <div className="icon-tile icon-tile-sm text-rose-300">
                   <Flame className="w-4 h-4" />
                 </div>
                 <div className="text-gray-400 text-xs uppercase">PB 30 giorni</div>
               </div>
-              <div className="text-white mt-1 text-lg font-semibold">
+              <div className="text-white mt-1 text-lg font-semibold stat-value">
                 {sprinterSummary.pbCountLast30}
               </div>
             </div>
@@ -1405,7 +1444,9 @@ export default function TrainingDashboard() {
                     <div className="text-gray-400 text-xs">Sample: {band.samples}</div>
                   </>
                 ) : (
-                  <div className="mt-2 text-gray-500 text-xs">Dati insufficienti</div>
+                  <div className="mt-2 text-gray-500 text-xs leading-relaxed">
+                    Corri almeno 3 sessioni sui {band.distance_m}m per sbloccare questa analisi
+                  </div>
                 )}
               </div>
             ))}
