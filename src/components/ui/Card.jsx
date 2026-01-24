@@ -2,58 +2,57 @@ import { forwardRef } from 'react'
 
 /**
  * Card variants for different styles.
- * 'glass' - Default glassmorphism card
- * 'solid' - Solid background without glass effect
- * 'stat' - Colorful stat card with glow
+ * 'solid' - Default solid background card
+ * 'stat' - Stat card with colored left border
+ * 'panel' - Smaller panel variant
  */
 const variantClasses = {
-  glass: 'glass-card',
-  solid: 'rounded-2xl border border-slate-700/50 bg-slate-800/80 p-5',
-  stat: 'stat-card',
-  panel: 'glass-panel'
+  solid: 'bg-slate-800/90 border border-slate-700/50 rounded-2xl p-5',
+  stat: 'bg-slate-800/90 border border-slate-700/50 rounded-2xl p-5',
+  panel: 'bg-slate-800/50 border border-slate-700/50 rounded-xl p-4',
+  // Legacy alias
+  glass: 'bg-slate-800/90 border border-slate-700/50 rounded-2xl p-5'
 }
 
 /**
- * Color variants for stat cards - maps to CSS classes.
+ * Color variants for stat cards - maps to CSS classes for left border.
  */
 const colorClasses = {
-  yellow: 'stat-card-yellow',
-  orange: 'stat-card-orange',
-  green: 'stat-card-green',
-  purple: 'stat-card-purple',
-  teal: 'stat-card-teal',
-  blue: 'stat-card-blue',
-  red: 'stat-card-red',
-  pink: 'stat-card-pink',
-  cyan: 'stat-card-cyan'
+  yellow: 'border-l-4 border-l-yellow-400',
+  orange: 'border-l-4 border-l-orange-500',
+  green: 'border-l-4 border-l-emerald-500',
+  purple: 'border-l-4 border-l-purple-500',
+  teal: 'border-l-4 border-l-teal-500',
+  blue: 'border-l-4 border-l-blue-500',
+  red: 'border-l-4 border-l-red-500',
+  pink: 'border-l-4 border-l-pink-500',
+  cyan: 'border-l-4 border-l-cyan-500'
 }
 
 /**
- * Card component with glassmorphism and color variant support.
+ * Card component with solid backgrounds and optional color accents.
  * 
  * @param {Object} props
- * @param {'glass' | 'solid' | 'stat' | 'panel'} props.variant - Card style variant
- * @param {'yellow' | 'orange' | 'green' | 'purple' | 'teal' | 'blue' | 'red' | 'pink' | 'cyan'} props.color - Color for stat variant
- * @param {boolean} props.hover - Enable hover animation
- * @param {boolean} props.shine - Enable shine effect on hover
+ * @param {'solid' | 'stat' | 'panel' | 'glass'} props.variant - Card style variant (default: solid)
+ * @param {'yellow' | 'orange' | 'green' | 'purple' | 'teal' | 'blue' | 'red' | 'pink' | 'cyan'} props.color - Color accent for stat variant
+ * @param {boolean} props.hover - Enable hover lift animation
  */
 export const Card = forwardRef(function Card(
   {
     children,
-    variant = 'glass',
+    variant = 'solid',
     color,
     hover = false,
-    shine = false,
+    shine = false, // Deprecated - kept for backward compatibility, does nothing
     className = '',
     ...props
   },
   ref
 ) {
   const classes = [
-    variantClasses[variant] || variantClasses.glass,
-    color && variant === 'stat' && colorClasses[color],
-    hover && 'transition-all duration-300 hover:-translate-y-1 hover:shadow-xl',
-    shine && 'widget-shine',
+    variantClasses[variant] || variantClasses.solid,
+    color && (variant === 'stat' || variant === 'solid') && colorClasses[color],
+    hover && 'transition-transform duration-200 hover:-translate-y-1',
     className
   ].filter(Boolean).join(' ')
   
@@ -91,7 +90,7 @@ export function CardBody({ className = '', children, ...props }) {
  */
 export function CardFooter({ className = '', children, ...props }) {
   return (
-    <div className={`mt-4 pt-4 border-t border-white/5 ${className}`} {...props}>
+    <div className={`mt-4 pt-4 border-t border-slate-700/50 ${className}`} {...props}>
       {children}
     </div>
   )
@@ -124,7 +123,7 @@ export function StatCard({
           <div className="stat-label">{label}</div>
           <div className="flex items-baseline gap-2">
             <span className="stat-value">{value}</span>
-            {suffix && <span className="text-sm opacity-60">{suffix}</span>}
+            {suffix && <span className="text-sm text-slate-400">{suffix}</span>}
           </div>
           {children}
         </div>

@@ -2,7 +2,7 @@ import { RECHARTS_TOOLTIP_STYLE, CHART_COLORS } from '../../constants/theme'
 
 /**
  * Custom tooltip component for Recharts that matches the app's design system.
- * Uses glassmorphism styling with the cyan accent color.
+ * Uses solid dark background with clean styling.
  */
 export function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
   if (!active || !payload || !payload.length) {
@@ -19,7 +19,7 @@ export function ChartTooltip({ active, payload, label, formatter, labelFormatter
       }}
     >
       {formattedLabel && (
-        <p className="text-sm font-semibold text-white mb-2 pb-2 border-b border-white/10">
+        <p className="text-sm font-semibold text-white mb-2 pb-2 border-b border-slate-600">
           {formattedLabel}
         </p>
       )}
@@ -57,11 +57,10 @@ export function SimpleTooltip({ active, payload, label }) {
   return (
     <div
       style={{
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        border: '1px solid rgba(59, 130, 246, 0.3)',
+        backgroundColor: '#1e293b',
+        border: '1px solid #475569',
         borderRadius: '8px',
-        padding: '8px 12px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+        padding: '8px 12px'
       }}
     >
       <p className="text-xs text-slate-300 mb-1">{label}</p>
@@ -112,7 +111,7 @@ export function ChartGradients({ colors = Object.values(CHART_COLORS) }) {
           x2="0"
           y2="1"
         >
-          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <stop offset="0%" stopColor={color} stopOpacity={0.3} />
           <stop offset="100%" stopColor={color} stopOpacity={0.05} />
         </linearGradient>
       ))}

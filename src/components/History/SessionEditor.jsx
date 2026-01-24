@@ -61,7 +61,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="modal-shell max-w-2xl max-h-[90vh] overflow-y-auto animate-pop widget-shine">
+      <div className="modal-shell max-w-2xl max-h-[90vh] overflow-y-auto animate-pop bg-slate-800 border border-slate-700 rounded-2xl">
         {/* Header */}
         <div className="modal-header sticky top-0">
           <SectionTitle title="Modifica Sessione" />

@@ -22,25 +22,15 @@ function App() {
 
   return (
     <div className="min-h-screen text-white">
-      {/* Background base gradient */}
-      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 -z-20" />
-      
-      {/* Animated mesh background orbs */}
-      <div className="mesh-background -z-10">
-        <div className="mesh-orb mesh-orb-1" />
-        <div className="mesh-orb mesh-orb-2" />
-        <div className="mesh-orb mesh-orb-3" />
-      </div>
-      
-      {/* Grain texture overlay */}
-      <div className="grain-overlay" />
+      {/* Background - static gradient */}
+      <div className="fixed inset-0 bg-gradient-to-b from-slate-900 to-slate-950 -z-20" />
 
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-900/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-slate-700/50 bg-slate-900/95 backdrop-blur-sm">
         <div className="app-shell py-3 sm:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-600 flex items-center justify-center">
                 <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
               <div>
@@ -56,7 +46,7 @@ function App() {
 
       {/* Navigation */}
       <div className="app-shell py-3 sm:py-4">
-        <nav className="glass-card p-1 sm:p-1.5">
+        <nav className="bg-slate-800/90 border border-slate-700/50 rounded-2xl p-1 sm:p-1.5">
           <div className="flex items-center gap-0.5 sm:gap-1">
             {tabs.map(({ id, label, Icon }) => (
               <button
@@ -81,7 +71,7 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 bg-slate-900/40 backdrop-blur-sm py-4 sm:py-6">
+      <footer className="border-t border-slate-700/50 bg-slate-900/80 py-4 sm:py-6">
         <div className="app-shell text-center">
           <p className="text-[10px] sm:text-xs text-slate-500">
             Training Log — Tracciamento intelligente allenamenti
