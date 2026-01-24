@@ -85,9 +85,9 @@ export default function SessionHistory() {
 
   return (
     <div className="app-shell animate-pop">
-      <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] gap-5 lg:gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5 lg:gap-6">
         {/* Calendario */}
-        <div className="lg:col-span-1">
+        <div>
           <SessionCalendar
             currentMonth={currentMonth}
             selectedDate={selectedDate}
@@ -100,10 +100,10 @@ export default function SessionHistory() {
         </div>
 
         {/* Dettagli e Editor */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4">
           {selectedDate && (
             <>
-              <div className="widget-card widget-accent-blue widget-shine widget-tint-blue panel-body flex items-center justify-between">
+              <div className="stat-card stat-card-blue p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="icon-tile icon-tile-sm text-sky-300">
                     <CalendarDays className="w-4 h-4" />
@@ -128,7 +128,7 @@ export default function SessionHistory() {
           )}
 
           {!selectedDate && (
-            <div className="widget-card widget-accent-blue widget-shine panel-body text-center transition-shadow duration-200 hover:shadow-md sm:px-8 sm:py-6">
+            <div className="stat-card stat-card-blue p-6 text-center sm:px-8 sm:py-6">
               {loading ? (
                 <LoadingSpinner message="Caricamento sessioni..." />
               ) : (

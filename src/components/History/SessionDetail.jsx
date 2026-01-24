@@ -60,7 +60,7 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
 
   if (loading) {
     return (
-      <Card className="text-center widget-card widget-accent-blue widget-shine">
+      <Card variant="stat" color="blue" shine className="text-center">
         <CardBody className="py-8">
           <LoadingSpinner message="Caricamento..." />
         </CardBody>
@@ -77,7 +77,7 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
       />
 
       {sessions.length === 0 ? (
-        <Card className="text-center widget-card widget-accent-blue widget-shine">
+        <Card variant="stat" color="blue" shine className="text-center">
           <CardBody className="py-8">
             <EmptyState
               icon={<CalendarDays className="w-6 h-6 text-primary-300" />}
@@ -88,7 +88,7 @@ export default function SessionDetail({ date, sessions, onDelete, loading }) {
         </Card>
       ) : (
         sessions.map((session) => (
-          <Card key={session.id} className="p-0 widget-card widget-accent-emerald widget-shine tap-ripple animate-float-in">
+          <Card key={session.id} variant="stat" color="green" shine className="p-0">
             {/* Header Sessione */}
             <div className="panel-body flex items-start justify-between">
               <div className="flex items-center gap-3 flex-1">

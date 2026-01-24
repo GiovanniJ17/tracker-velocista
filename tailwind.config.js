@@ -4,6 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Core background colors
+        surface: {
+          DEFAULT: '#0a0f1a',
+          50: '#1a1f2e',
+          100: '#151a27',
+          200: '#0f1420',
+          300: '#0a0f1a',
+          400: '#070b14',
+          500: '#05080f'
+        },
+        // Primary accent (cyan/blue)
         primary: {
           50: '#f0f9ff',
           100: '#e0f2fe',
@@ -16,6 +27,7 @@ export default {
           800: '#075985',
           900: '#0c4a6e'
         },
+        // Semantic accent colors for cards/widgets
         accent: {
           yellow: '#fbbf24',
           orange: '#f97316',
@@ -29,6 +41,17 @@ export default {
           emerald: '#10b981',
           amber: '#f59e0b',
           rose: '#f43f5e'
+        },
+        // Chart colors - semantic names for data visualization
+        chart: {
+          blue: '#3b82f6',
+          green: '#10b981',
+          yellow: '#f59e0b',
+          red: '#ef4444',
+          purple: '#8b5cf6',
+          pink: '#ec4899',
+          cyan: '#06b6d4',
+          orange: '#f97316'
         }
       },
       animation: {

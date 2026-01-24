@@ -54,11 +54,14 @@ import {
 import { generateProactiveAlerts } from '../services/proactiveCoach'
 import CoachAlerts from './CoachAlerts'
 import LoadingSpinner from './LoadingSpinner'
-import { Card, CardBody, CardHeader } from './ui/Card'
+import { Card, CardBody, CardHeader, StatCard } from './ui/Card'
+import Button from './ui/Button'
 import EmptyState from './ui/EmptyState'
 import SectionTitle, { Subheader } from './ui/SectionTitle'
+import { ChartTooltip, tooltipContentStyle, axisProps, gridProps } from './ui/ChartTooltip'
+import { CHART_COLOR_ARRAY } from '../constants/theme'
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+const COLORS = CHART_COLOR_ARRAY
 
 export default function TrainingDashboard() {
   const [loading, setLoading] = useState(true)
@@ -743,10 +746,9 @@ export default function TrainingDashboard() {
             <option value="3months">Ultimi 3 Mesi</option>
             <option value="custom">Custom</option>
           </select>
-          <button onClick={handleExportCSV} className="px-4 py-2 btn-primary rounded-xl">
-            <Download className="w-4 h-4" />
+          <Button onClick={handleExportCSV} icon={<Download className="w-4 h-4" />}>
             Esporta CSV
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -761,13 +763,14 @@ export default function TrainingDashboard() {
               <Activity className="w-5 h-5 text-cyan-400" />
               <span className="text-base font-semibold text-white">Insight Coach AI</span>
             </div>
-            <button
+            <Button
               onClick={handleGenerateInsight}
-              disabled={coachLoading || (!rawData.sessions.length && !rawData.raceRecords.length)}
-              className="px-4 py-2 btn-primary rounded-xl text-sm"
+              disabled={!rawData.sessions.length && !rawData.raceRecords.length}
+              loading={coachLoading}
+              size="sm"
             >
               {coachLoading ? 'Generazione...' : 'Genera Insight'}
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-slate-400 mb-4">Commento automatico sugli ultimi allenamenti</p>
           
@@ -799,7 +802,7 @@ export default function TrainingDashboard() {
           )}
         </div>
 
-        <Card className="widget-card widget-accent-pink widget-shine widget-tint-pink">
+        <Card variant="stat" color="pink" shine>
           <CardHeader>
             <SectionTitle title="What-if Prestazione" icon={<TrendingUp className="w-5 h-5" />} />
           </CardHeader>
@@ -908,13 +911,14 @@ export default function TrainingDashboard() {
                 </div>
               </>
             )}
-          <button
+          <Button
             onClick={handleWhatIf}
-            disabled={whatIfLoading || !distanceOptions.length}
-            className="w-full px-3 py-2 min-h-[44px] btn-primary"
+            disabled={!distanceOptions.length}
+            loading={whatIfLoading}
+            fullWidth
           >
-              {whatIfLoading ? 'Calcolo...' : 'Stima tempo atteso'}
-            </button>
+            {whatIfLoading ? 'Calcolo...' : 'Stima tempo atteso'}
+          </Button>
             {whatIfResult && (
               <div className="panel-body text-gray-200 text-sm space-y-1 bg-slate-700 border border-slate-600 rounded">
                 {whatIfResult.error && (
@@ -941,59 +945,37 @@ export default function TrainingDashboard() {
       {/* Colorful KPI Cards */}
       {kpis && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="stat-card stat-yellow">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="stat-label">Sessioni</div>
-                <div className="stat-value">{kpis.totalSessions}</div>
-              </div>
-              <div className="stat-icon">
-                <BarChart4 className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="stat-card stat-orange">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="stat-label">RPE Medio</div>
-                <div className="stat-value">{kpis.avgRPE}</div>
-              </div>
-              <div className="stat-icon">
-                <Activity className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="stat-card stat-purple">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="stat-label">Personal Best</div>
-                <div className="stat-value">{kpis.pbCount}</div>
-              </div>
-              <div className="stat-icon">
-                <Trophy className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="stat-card stat-green">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="stat-label">Streak</div>
-                <div className="flex items-baseline gap-2">
-                  <span className="stat-value">{kpis.streak}</span>
-                  <span className="text-sm opacity-60">giorni</span>
-                </div>
-              </div>
-              <div className="stat-icon">
-                <Flame className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
+          <StatCard
+            color="yellow"
+            label="Sessioni"
+            value={kpis.totalSessions}
+            icon={<BarChart4 className="w-5 h-5 text-yellow-400" />}
+          />
+          <StatCard
+            color="orange"
+            label="RPE Medio"
+            value={kpis.avgRPE}
+            icon={<Activity className="w-5 h-5 text-orange-400" />}
+          />
+          <StatCard
+            color="purple"
+            label="Personal Best"
+            value={kpis.pbCount}
+            icon={<Trophy className="w-5 h-5 text-purple-400" />}
+          />
+          <StatCard
+            color="green"
+            label="Streak"
+            value={kpis.streak}
+            suffix="giorni"
+            icon={<Flame className="w-5 h-5 text-emerald-400" />}
+          />
         </div>
       )}
 
       {/* Sprint Summary */}
       {hasSprintSummary && (
-        <Card className="widget-card widget-accent-blue widget-shine">
+        <Card variant="stat" color="blue" shine>
           <CardHeader>
             <SectionTitle title="Sprint Summary" subtitle="I 5 numeri chiave" icon={<Trophy className="w-5 h-5" />} />
           </CardHeader>
@@ -1069,7 +1051,7 @@ export default function TrainingDashboard() {
 
       {/* Sprinter Focus */}
       {hasSprintSummary && (
-        <Card className="widget-card widget-accent-emerald widget-shine">
+        <Card variant="stat" color="green" shine>
           <CardHeader>
             <SectionTitle
               title="Focus Sprinter"
@@ -1181,12 +1163,12 @@ export default function TrainingDashboard() {
 
       {/* Sprint Metrics */}
       {hasSprintMetrics && (
-        <Card className="widget-card widget-accent-amber widget-shine">
+        <Card variant="stat" color="orange" shine>
           <CardHeader>
             <SectionTitle title="Metriche Sprinter" subtitle="Velocità, riserva e consistenza" icon={<LineChartIcon className="w-5 h-5" />} />
           </CardHeader>
           <CardBody className="space-y-4 text-sm text-gray-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="panel-body bg-slate-700 rounded-lg border border-slate-600">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="icon-tile icon-tile-sm text-sky-300">
@@ -1250,7 +1232,7 @@ export default function TrainingDashboard() {
       )}
 
       {sprintDataQuality.issues.length > 0 && (
-        <Card className="widget-card widget-accent-pink widget-shine">
+        <Card variant="stat" color="pink" shine>
           <CardHeader>
             <SectionTitle title="Dati da verificare" subtitle="Possibili anomalie" icon={<Target className="w-5 h-5" />} />
           </CardHeader>
@@ -1273,7 +1255,7 @@ export default function TrainingDashboard() {
 
       {/* Sprint Load Model */}
       {hasSprintLoad && (
-        <Card className="widget-card widget-accent-blue widget-shine">
+        <Card variant="stat" color="blue" shine>
           <CardHeader>
             <SectionTitle
               title="Sprint Load (ATL/CTL/TSB)"
@@ -1326,7 +1308,7 @@ export default function TrainingDashboard() {
 
       {/* Sprint Period Comparison */}
       {hasSprintComparison && (
-        <Card className="widget-card widget-accent-emerald widget-shine">
+        <Card variant="stat" color="green" shine>
           <CardHeader>
             <SectionTitle title="Confronto Sprint 4 settimane" icon={<CalendarDays className="w-5 h-5" />} />
           </CardHeader>
@@ -1396,7 +1378,7 @@ export default function TrainingDashboard() {
 
       {/* Target Time Bands */}
       {sprintTargetBands.some((band) => band.target_s) && (
-        <Card className="widget-card widget-accent-amber widget-shine">
+        <Card variant="stat" color="orange" shine>
           <CardHeader>
             <SectionTitle title="Target Time Bands" subtitle="Stima 100/200/400m (ultimi 120g)" icon={<Target className="w-5 h-5" />} />
           </CardHeader>
@@ -1673,8 +1655,8 @@ export default function TrainingDashboard() {
               <PieChartIcon className="w-4 h-4 text-pink-400" />
               <span className="text-sm font-medium text-white">Distribuzione Tipi</span>
             </div>
-            <div className="w-full min-h-[180px] min-w-0">
-                <ResponsiveContainer width="100%" height={180} minWidth={0}>
+            <div className="w-full min-h-[220px] min-w-0">
+                <ResponsiveContainer width="100%" height={220} minWidth={0}>
                   <PieChart>
                     <Pie
                       data={chartDistributionData}
@@ -1682,7 +1664,7 @@ export default function TrainingDashboard() {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
+                      outerRadius={80}
                       label={({ name, percentage }) => `${name} ${percentage}%`}
                     >
                       {chartDistributionData.map((entry, index) => (
@@ -1762,7 +1744,7 @@ export default function TrainingDashboard() {
       {/* RPE vs Performance */}
       {scatterData.length > 0 && selectedDistance && (
         <div className="card-grid-tight lg:grid-cols-3">
-          <Card className="widget-card widget-accent-blue widget-shine widget-tint-blue">
+          <Card variant="stat" color="blue" shine>
           <CardHeader>
             <SectionTitle title="RPE vs Tempo" icon={<Activity className="w-5 h-5" />} />
           </CardHeader>
@@ -1786,7 +1768,7 @@ export default function TrainingDashboard() {
               </div>
             </CardBody>
           </Card>
-          <Card className="widget-card widget-accent-blue widget-shine widget-tint-blue lg:col-span-2">
+          <Card variant="stat" color="blue" shine className="lg:col-span-2">
             <CardHeader>
               <SectionTitle title="Grafico RPE" icon={<LineChartIcon className="w-5 h-5" />} />
             </CardHeader>
@@ -1828,7 +1810,7 @@ export default function TrainingDashboard() {
       {/* Metriche Mensili */}
       {chartMonthlyMetrics.length > 0 && (
         <div className="card-grid-tight lg:grid-cols-3">
-          <Card className="widget-card widget-accent-amber widget-shine widget-tint-amber">
+          <Card variant="stat" color="orange" shine>
           <CardHeader>
             <SectionTitle title="Trend Mensile" icon={<CalendarDays className="w-5 h-5" />} />
           </CardHeader>
@@ -1853,7 +1835,7 @@ export default function TrainingDashboard() {
               )}
             </CardBody>
           </Card>
-          <Card className="widget-card widget-accent-amber widget-shine widget-tint-amber lg:col-span-2">
+          <Card variant="stat" color="orange" shine className="lg:col-span-2">
           <CardHeader>
             <SectionTitle title="Grafico Mensile" icon={<LineChartIcon className="w-5 h-5" />} />
           </CardHeader>
@@ -1880,7 +1862,7 @@ export default function TrainingDashboard() {
 
       {/* Timeline Infortuni */}
       {injuryTimeline.length > 0 && (
-        <Card className="widget-card widget-accent-pink widget-shine">
+        <Card variant="stat" color="pink" shine>
           <CardHeader>
             <SectionTitle title="🏥 Timeline Infortuni" icon={<Activity className="w-5 h-5" />} />
           </CardHeader>
@@ -1919,19 +1901,19 @@ export default function TrainingDashboard() {
       )}
 
       {/* Suggerimento Adattivo AI */}
-      <Card className="widget-card widget-accent-emerald widget-shine">
+      <Card variant="stat" color="green" shine>
         <CardHeader className="flex items-center justify-between">
           <SectionTitle
             title="Adatta la prossima sessione"
             subtitle="Analizza stanchezza e tempi recenti"
           />
-          <button
+          <Button
             onClick={handleAdaptiveSuggestion}
-            disabled={adaptiveLoading || !rawData.sessions.length}
-            className="px-4 py-2 min-h-[44px] btn-primary"
+            disabled={!rawData.sessions.length}
+            loading={adaptiveLoading}
           >
             {adaptiveLoading ? 'Analisi...' : 'Suggerisci'}
-          </button>
+          </Button>
         </CardHeader>
         <CardBody>
           <div className="space-y-2">
@@ -1973,7 +1955,7 @@ export default function TrainingDashboard() {
 
       {/* Empty State */}
       {progressionData.length === 0 && (
-        <Card className="text-center widget-card widget-accent-blue widget-shine">
+        <Card variant="stat" color="blue" shine className="text-center">
           <CardBody className="py-10 sm:py-12">
             <EmptyState
               icon={<BarChart4 className="w-6 h-6 text-primary-300" />}

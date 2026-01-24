@@ -39,7 +39,7 @@ export default function SessionCalendar({
   }
 
   return (
-    <div className="widget-card widget-accent-emerald widget-shine-enhanced overflow-hidden card-hover-lift">
+    <div className="stat-card stat-card-green overflow-hidden">
       {/* Enhanced Header */}
       <div className="relative bg-gradient-to-r from-emerald-600/20 via-teal-600/20 to-cyan-600/20 px-4 sm:px-6 py-4 border-b border-slate-700/50">
         <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 animate-gradient-x" />

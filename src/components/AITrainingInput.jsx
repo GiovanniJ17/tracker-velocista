@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Sparkles, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Sparkles, CheckCircle2, AlertCircle, Dumbbell, Target, FileText } from 'lucide-react'
 import { parseTrainingWithAI, validateParsedData } from '../services/aiParser'
 import { saveTrainingSessions } from '../services/trainingService'
 import AmbiguityModal from './AmbiguityModal'
-import { Card, CardBody } from './ui/Card'
+import { Card, CardBody, StatCard } from './ui/Card'
+import Button from './ui/Button'
 import SectionTitle from './ui/SectionTitle'
 
 function friendlyErrorMessage(message) {
@@ -175,23 +176,16 @@ export default function AITrainingInput({ onDataSaved }) {
 
             {/* Parse Button */}
             {!parsedData && (
-              <button
+              <Button
                 onClick={handleParse}
-                disabled={loading || !trainingText.trim()}
-                className="w-full py-3 px-6 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                disabled={!trainingText.trim()}
+                loading={loading}
+                fullWidth
+                size="lg"
+                icon={<Sparkles className="w-5 h-5" />}
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Interpretazione AI in corso...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-5 h-5" />
-                    Interpreta con AI
-                  </>
-                )}
-              </button>
+                {loading ? 'Interpretazione AI in corso...' : 'Interpreta con AI'}
+              </Button>
             )}
 
             {/* Errori */}
@@ -336,30 +330,24 @@ export default function AITrainingInput({ onDataSaved }) {
 
               {/* Bottoni azione */}
               <div className="flex gap-3">
-                <button
+                <Button
                   onClick={handleSave}
-                  disabled={loading}
-                  className="flex-1 py-3 px-6 btn-success"
+                  loading={loading}
+                  variant="success"
+                  size="lg"
+                  className="flex-1"
+                  icon={<CheckCircle2 className="w-5 h-5" />}
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Salvataggio...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-5 h-5" />
-                      Salva {parsedData.sessions.length > 1 ? 'tutte le sessioni' : 'nel Database'}
-                    </>
-                  )}
-                </button>
-                <button
+                  {loading ? 'Salvataggio...' : `Salva ${parsedData.sessions.length > 1 ? 'tutte le sessioni' : 'nel Database'}`}
+                </Button>
+                <Button
                   onClick={() => setParsedData(null)}
                   disabled={loading}
-                  className="px-6 py-3 btn-ghost link-muted"
+                  variant="ghost"
+                  size="lg"
                 >
                   Modifica
-                </button>
+                </Button>
               </div>
 
               {/* Success message */}
@@ -386,7 +374,7 @@ export default function AITrainingInput({ onDataSaved }) {
         </div>
 
         <div className="space-y-4">
-          <Card className="widget-card widget-accent-pink widget-shine widget-tint-pink p-5 sm:p-6 animate-fade-up">
+          <Card variant="stat" color="pink" shine className="p-5 sm:p-6 animate-fade-up">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Focus rapido</h3>
               <span className="widget-chip">AI Ready</span>
@@ -410,7 +398,7 @@ export default function AITrainingInput({ onDataSaved }) {
             </div>
           </Card>
 
-          <Card className="widget-card widget-teal p-5 animate-slide-up">
+          <Card variant="stat" color="teal" className="p-5 animate-slide-up">
             <h3 className="text-base font-bold text-white mb-4">Flow in 3 step</h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between p-3 rounded-xl bg-teal-500/10 border border-teal-500/20">
@@ -428,7 +416,7 @@ export default function AITrainingInput({ onDataSaved }) {
             </div>
           </Card>
 
-          <Card className="widget-card widget-orange p-5 animate-slide-up">
+          <Card variant="stat" color="orange" className="p-5 animate-slide-up">
             <h3 className="text-base font-bold text-white mb-4">Suggerimenti rapidi</h3>
             <div className="grid grid-cols-2 gap-2">
               {['RPE', 'Recuperi', 'Palestra', 'Test', 'Note', 'Infortuni'].map((tag) => (

@@ -13,7 +13,8 @@ import {
   Activity
 } from 'lucide-react'
 import EmptyState from './ui/EmptyState'
-import { Card } from './ui/Card'
+import { Card, StatCard } from './ui/Card'
+import Button from './ui/Button'
 import SectionTitle from './ui/SectionTitle'
 import LoadingSpinner from './LoadingSpinner'
 import {
@@ -152,16 +153,16 @@ export default function AthleteProfile() {
   if (!profile) {
     return (
       <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6 animate-pop">
-      <div className="glass-card widget-card widget-accent-blue widget-shine panel-body text-gray-200 text-center transition-shadow duration-200 hover:shadow-md">
+      <Card variant="stat" color="blue" shine className="text-gray-200 text-center">
           <EmptyState
             icon={<User className="w-6 h-6 text-primary-300" />}
             title="Profilo non ancora creato"
             description="Compila i dati atleta per vedere statistiche e PB personali."
           />
-        </div>
-        <button onClick={handleEditProfile} className="px-4 py-2 min-h-[44px] btn-primary">
+        </Card>
+        <Button onClick={handleEditProfile}>
           Crea profilo
-        </button>
+        </Button>
         {showEditProfile && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="modal-shell p-5 sm:p-8 max-w-sm max-w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -313,14 +314,14 @@ export default function AthleteProfile() {
               </div>
             </div>
           </div>
-          <button onClick={handleEditProfile} className="px-4 py-2 min-h-[44px] btn-primary">
+          <Button onClick={handleEditProfile}>
             Modifica
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="widget-card widget-accent-blue widget-shine p-2 sm:p-3">
+      <Card variant="stat" color="blue" shine className="p-2 sm:p-3">
         <div className="flex gap-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Overview', icon: Trophy },
@@ -344,7 +345,7 @@ export default function AthleteProfile() {
             )
           })}
         </div>
-      </div>
+      </Card>
 
       {/* Contenuto Tab */}
       <div>
@@ -372,7 +373,7 @@ export default function AthleteProfile() {
                     .map((record) => (
                       <Card
                         key={record.distance_m}
-                        className="p-4 sm:p-6 widget-card widget-accent-blue widget-shine"
+                        variant="stat" color="blue" shine className="p-4 sm:p-6"
                       >
                         <div className="space-y-3">
                           <div>
@@ -406,7 +407,7 @@ export default function AthleteProfile() {
                   {personalBests.trainingRecords.slice(0, 3).map((record) => (
                     <Card
                       key={record.id}
-                      className="p-4 sm:p-6 widget-card widget-accent-emerald widget-shine"
+                      variant="stat" color="green" shine className="p-4 sm:p-6"
                     >
                       <div className="space-y-3">
                         <div>
@@ -449,7 +450,7 @@ export default function AthleteProfile() {
                     .map((record) => (
                       <Card
                         key={record.id}
-                        className="p-4 sm:p-6 widget-card widget-accent-amber widget-shine"
+                        variant="stat" color="orange" shine className="p-4 sm:p-6"
                       >
                         <div className="space-y-3">
                           <div>
@@ -475,7 +476,7 @@ export default function AthleteProfile() {
 
         {/* Race PBs */}
         {activeTab === 'race-pbs' && personalBests && (
-          <div className="glass-card widget-card widget-accent-blue widget-shine overflow-hidden transition-shadow duration-200 hover:shadow-md">
+          <Card variant="stat" color="blue" shine className="overflow-hidden">
             <div className="panel-header">
               <SectionTitle title="Record Personali - Gara" />
             </div>
@@ -521,12 +522,12 @@ export default function AthleteProfile() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Training PBs */}
         {activeTab === 'training-pbs' && personalBests && (
-          <div className="glass-card widget-card widget-accent-emerald widget-shine overflow-hidden transition-shadow duration-200 hover:shadow-md">
+          <Card variant="stat" color="green" shine className="overflow-hidden">
             <div className="panel-header">
               <SectionTitle title="Record Personali - Allenamento" />
             </div>
@@ -575,12 +576,12 @@ export default function AthleteProfile() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Strength Records */}
         {activeTab === 'strength-pbs' && personalBests && (
-          <div className="glass-card widget-card widget-accent-amber widget-shine overflow-hidden transition-shadow duration-200 hover:shadow-md">
+          <Card variant="stat" color="orange" shine className="overflow-hidden">
             <div className="panel-header">
               <SectionTitle title="Massimali di Forza" />
             </div>
@@ -626,12 +627,12 @@ export default function AthleteProfile() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Injuries */}
         {activeTab === 'injuries' && (
-          <div className="glass-card widget-card widget-accent-pink widget-shine overflow-hidden transition-shadow duration-200 hover:shadow-md">
+          <Card variant="stat" color="pink" shine className="overflow-hidden">
             <div className="panel-header">
               <SectionTitle title="Storico Infortuni" />
               <button
@@ -733,7 +734,7 @@ export default function AthleteProfile() {
                   ))
               )}
             </div>
-          </div>
+          </Card>
         )}
       </div>
 

@@ -78,7 +78,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
             </div>
           )}
 
-          <Card className="p-0 widget-card widget-accent-blue widget-shine">
+          <Card variant="stat" color="blue" shine className="p-0">
             <CardHeader>
               <SectionTitle title="Dettagli sessione" />
             </CardHeader>
@@ -169,7 +169,7 @@ export default function SessionEditor({ session, onClose, onSave }) {
             </CardBody>
           </Card>
 
-          <Card className="p-0 widget-card widget-accent-emerald widget-shine">
+          <Card variant="stat" color="green" shine className="p-0">
             <CardHeader>
               <SectionTitle title="Note" />
             </CardHeader>
